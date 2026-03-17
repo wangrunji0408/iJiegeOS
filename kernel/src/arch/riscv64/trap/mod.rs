@@ -107,9 +107,13 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
                     let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(0);
                     // 只记录 worker 进程（pid>1）的非频繁 syscall
                     // pid=2(worker) 只记录非频繁调用；pid=1 不记录
-                    let is_frequent_worker = matches!(syscall_id, 96 | 113 | 114 | 25 | 134 | 135 | 222 | 214 | 215 | 226 | 133 | 98 | 124);
-                    if pid == 2 && !is_frequent_worker {
-                        log::warn!("[pid={}] sc={} sepc={:#x} ret={}", pid, syscall_id, ctx.sepc, ret);
+                    // 记录 pid=2 worker 的所有 syscall（除了极高频的）
+                    // 96=gettimeofday, 113=clock_gettime, 114=clock_getres
+                    // 25=fcntl, 222=mmap, 214=brk, 226=mprotect
+                    // 133=madvise, 98=futex, 124=sched_yield
+                    let is_very_frequent = matches!(syscall_id, 113 | 114 | 222 | 214 | 226 | 133 | 98 | 124);
+                    if pid == 2 && !is_very_frequent {
+                        log::warn!("[pid={}] sc={} a0={:#x} a1={:#x} ret={}", pid, syscall_id, args[0], args[1], ret);
                     }
                 }
             }
