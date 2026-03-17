@@ -11,6 +11,12 @@ pub const TRAP_CONTEXT_BASE: usize = 0;
 
 /// TrapContext: 保存陷阱时的所有寄存器状态
 /// 保存在进程内核栈上（高地址方向）
+///
+/// 内存布局（由 trap.asm 直接索引）：
+///   x[0..32]: offset 0..256     (通用寄存器)
+///   sstatus:  offset 256
+///   sepc:     offset 264
+///   satp:     offset 272        (用户进程的页表 token，用于切换)
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct TrapContext {
@@ -20,6 +26,8 @@ pub struct TrapContext {
     pub sstatus: usize,
     /// sepc (程序计数器)
     pub sepc: usize,
+    /// 用户进程页表 token (satp 寄存器值)
+    pub user_satp: usize,
 }
 
 impl TrapContext {
@@ -37,6 +45,7 @@ impl TrapContext {
             x: [0; 32],
             sstatus: sstatus_val,
             sepc: entry,
+            user_satp: 0,  // 由 task 设置
         };
         ctx.x[2] = user_sp;
         ctx
