@@ -151,9 +151,10 @@ impl Vfs for TmpFs {
                     flags: Mutex::new(flags),
                 }))
             }
-            FsNode::Dir(_) => {
+            FsNode::Dir(dir_data) => {
                 Some(Arc::new(TmpDir {
                     path: path_str,
+                    ino: dir_data.ino,
                     fs_ptr: Arc::new(self as *const TmpFs as usize),
                     offset: Mutex::new(0),
                 }))
