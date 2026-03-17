@@ -140,54 +140,19 @@ pub fn exit_current_and_run_next(exit_code: usize) {
 }
 
 /// trap_return: 从内核态返回用户态
-/// 这是新任务第一次切换时的目标
+/// 当新任务第一次被调度时，ra = trap_return
+/// 此时 sp 指向内核栈中的 TrapContext
+/// 我们需要：
+///   1. 设置 sscratch = sp（让 __alltraps 知道内核栈在哪）
+///   2. 跳转到 __restore 完成返回用户态
 #[unsafe(naked)]
 #[no_mangle]
 pub unsafe extern "C" fn trap_return() {
     core::arch::naked_asm!(
-        // 设置 stvec 到 trampoline 的 __alltraps
-        "la t0, strampoline",
-        // 计算 __alltraps 的虚拟地址（在 trampoline 页内的偏移）
-        // TRAMPOLINE = 0x3ffff000（用户虚拟地址）
-        // strampoline 在 trampoline 页开头，所以偏移 = __alltraps - strampoline + TRAMPOLINE
-        "la t1, __alltraps",
-        "sub t1, t1, t0",
-        "li t0, 0x3ffff000",  // TRAMPOLINE 虚拟地址
-        "add t0, t0, t1",
-        "csrw stvec, t0",
-
-        // 获取 TrapContext 的内核地址（通过当前进程的 trap_cx_ppn）
-        // 调用 current_trap_cx_kernel_addr()
-        "call current_trap_cx_kernel_addr",
-        // a0 = TrapContext 内核地址
-
-        // 从 TrapContext 加载用户 satp（存在 kernel_satp 字段的下一个字段）
-        // 实际上我们需要从 user_satp 字段读取
-        // TrapContext: x[32], sstatus, sepc, kernel_sp, kernel_satp, trap_handler, user_satp
-        // offsets: 256, 264, 272, 280, 288, 296
-        "ld t1, 296(a0)",  // user_satp
-
-        // 计算 __restore 的虚拟地址
-        "la t0, strampoline",
-        "la t2, __restore",
-        "sub t2, t2, t0",
-        "li t0, 0x3ffff000",  // TRAMPOLINE
-        "add t2, t0, t2",
-
-        // 切换到用户页表并跳转到 __restore
-        // __restore(a0 = TrapContext内核地址, a1 = user_satp)
-        // 但 __restore 是在 trampoline 中的，需要在用户页表下执行
-        "mv a0, a0",
-        "jr t2",  // 跳转到 __restore (trampoline 中的版本)
+        // sp 当前指向 TrapContext（内核栈顶的 TrapContext 起始位置）
+        // 设置 sscratch = sp，这样下次陷阱时 __alltraps 可以正确切换
+        "csrw sscratch, sp",
+        // 跳转到 __restore 来恢复用户态寄存器并执行 sret
+        "j __restore",
     );
-}
-
-/// 获取当前进程的 TrapContext 内核虚拟地址
-#[no_mangle]
-pub extern "C" fn current_trap_cx_kernel_addr() -> usize {
-    let task = crate::task::current_task().expect("no current task");
-    let inner = task.inner_exclusive_access();
-    let pa: crate::mm::PhysAddr = inner.trap_cx_ppn.into();
-    // 在内核恒等映射下，物理地址 = 内核虚拟地址
-    pa.0
 }
