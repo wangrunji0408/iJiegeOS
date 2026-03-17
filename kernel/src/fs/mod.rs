@@ -57,23 +57,18 @@ pub fn init() {
 }
 
 fn load_initrd(rootfs: &Arc<tmpfs::TmpFs>) {
-    // initrd.cpio 在内核二进制中
-    extern "C" {
-        fn _initrd_start();
-        fn _initrd_end();
+    // 将 initrd.cpio 嵌入内核二进制
+    #[cfg(has_initrd)]
+    {
+        let data = include_bytes!(env!("INITRD_PATH"));
+        log::info!("Loading initrd: {} bytes", data.len());
+        cpio::extract_cpio(rootfs, data);
     }
 
-    let start = _initrd_start as usize;
-    let end = _initrd_end as usize;
-    let data = unsafe { core::slice::from_raw_parts(start as *const u8, end - start) };
-
-    if data.is_empty() || end <= start {
-        log::warn!("No initrd found");
-        return;
+    #[cfg(not(has_initrd))]
+    {
+        log::warn!("No initrd found - filesystem will be empty");
     }
-
-    log::info!("Loading initrd: {} bytes", data.len());
-    cpio::extract_cpio(rootfs, data);
 }
 
 /// 根据路径打开文件
