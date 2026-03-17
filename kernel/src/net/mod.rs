@@ -237,6 +237,10 @@ pub fn poll() {
                 tcp_sock.is_active() && tcp_sock.may_recv()
             };
             if is_connected {
+                    fn p(c: u8) { crate::arch::sbi::console_putchar(c); }
+                    fn ps(s: &str) { for b in s.bytes() { p(b); } }
+                    fn pd(mut n: u64) { if n==0{p(b'0');return;} let mut buf=[0u8;20]; let mut i=20; while n>0{i-=1;buf[i]=b'0'+(n%10)as u8;n/=10;} for b in &buf[i..]{p(*b);} }
+                    ps("TCP_CONN:port="); pd(port as u64); ps("\n");
                     // 此连接已建立，移到 pending_accepts
                     state.tcp_listeners.remove(&port);
                     state.pending_accepts.entry(port).or_default().push_back(handle);
