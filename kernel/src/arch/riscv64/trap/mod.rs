@@ -78,6 +78,12 @@ pub fn init() {
     log::info!("trap: stvec={:#x}", __alltraps as usize);
 }
 
+// Track 21f60 call sites (sepc at jal instruction in 21f60 callers)
+// 21fdc: jal 22522 inside 21f60
+const MALLOC_JAL: usize = 0x40021fdc;
+// 21f90: jal memset at start of 21f60
+const MEMSET_JAL: usize = 0x40021f90;
+
 #[no_mangle]
 pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
     let scause = scause::read();
