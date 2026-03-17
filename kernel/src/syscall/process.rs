@@ -92,8 +92,11 @@ pub fn sys_clone(flags: usize, child_sp: usize, ptid: usize, ctid: usize, newtls
     let parent_pid = current.pid.0;
     let child_task = fork_task(&current, flags, child_sp, ptid, ctid, newtls, ctx);
     let child_pid = child_task.pid.0;
-    add_task(Arc::new(child_task));
-    log::debug!("[pid={}] clone: child_pid={}", parent_pid, child_pid);
+    let child_arc = alloc::sync::Arc::new(child_task);
+    // 把子进程加入父进程的 children 列表
+    current.inner_exclusive_access().children.push(child_arc.clone());
+    add_task(child_arc);
+    log::warn!("[pid={}] clone -> child_pid={}", parent_pid, child_pid);
     child_pid as i64
 }
 
