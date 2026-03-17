@@ -104,14 +104,16 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
         Trap::Exception(Exception::StoreFault)
         | Trap::Exception(Exception::StorePageFault) => {
             if !crate::mm::handle_page_fault(stval, scause.bits()) {
-                log::warn!("Store fault: addr={:#x}, sepc={:#x}", stval, ctx.sepc);
+                log::warn!("Store fault: addr={:#x}, sepc={:#x}, ra={:#x}, sp={:#x}, a0={:#x}",
+                    stval, ctx.sepc, ctx.x[1], ctx.x[2], ctx.x[10]);
                 crate::task::current_add_signal(crate::signal::Signal::SIGSEGV);
             }
         }
         Trap::Exception(Exception::LoadFault)
         | Trap::Exception(Exception::LoadPageFault) => {
             if !crate::mm::handle_page_fault(stval, scause.bits()) {
-                log::warn!("Load fault: addr={:#x}, sepc={:#x}", stval, ctx.sepc);
+                log::warn!("Load fault: addr={:#x}, sepc={:#x}, ra={:#x}, sp={:#x}",
+                    stval, ctx.sepc, ctx.x[1], ctx.x[2]);
                 crate::task::current_add_signal(crate::signal::Signal::SIGSEGV);
             }
         }
