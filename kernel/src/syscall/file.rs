@@ -56,8 +56,8 @@ pub fn sys_read(fd: usize, buf: *mut u8, len: usize) -> i64 {
     let mut total = 0i64;
     for slice in user_buf.iter_mut() {
         let n = file.read(slice);
-        if n < 0 { return n; }
-        total += n;
+        if n < 0 { return n as i64; }
+        total += n as i64;
         if (n as usize) < slice.len() { break; }
     }
     total
@@ -76,8 +76,8 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> i64 {
     let mut total = 0i64;
     for slice in user_buf.iter() {
         let n = file.write(slice);
-        if n < 0 { return n; }
-        total += n;
+        if n < 0 { return n as i64; }
+        total += n as i64;
         if (n as usize) < slice.len() { break; }
     }
     total
@@ -174,8 +174,8 @@ pub fn sys_readv(fd: usize, iov: usize, iovcnt: usize) -> i64 {
         let mut bufs = translated_byte_buffer(tok, base as *mut u8, len);
         for buf in bufs.iter_mut() {
             let n = file.read(buf);
-            if n < 0 { return n; }
-            total += n;
+            if n < 0 { return n as i64; }
+            total += n as i64;
         }
     }
     total
@@ -200,8 +200,8 @@ pub fn sys_writev(fd: usize, iov: usize, iovcnt: usize) -> i64 {
         let bufs = translated_byte_buffer(tok, base as *mut u8, len);
         for buf in bufs.iter() {
             let n = file.write(buf);
-            if n < 0 { return n; }
-            total += n;
+            if n < 0 { return n as i64; }
+            total += n as i64;
         }
     }
     total
@@ -220,8 +220,8 @@ pub fn sys_pread64(fd: usize, buf: *mut u8, len: usize, offset: i64) -> i64 {
     let mut total = 0i64;
     for buf in bufs.iter_mut() {
         let n = file.read_at(offset as u64 + total as u64, buf);
-        if n < 0 { return n; }
-        total += n;
+        if n < 0 { return n as i64; }
+        total += n as i64;
     }
     total
 }
@@ -239,8 +239,8 @@ pub fn sys_pwrite64(fd: usize, buf: *const u8, len: usize, offset: i64) -> i64 {
     let mut total = 0i64;
     for buf in bufs.iter() {
         let n = file.write_at(offset as u64 + total as u64, buf);
-        if n < 0 { return n; }
-        total += n;
+        if n < 0 { return n as i64; }
+        total += n as i64;
     }
     total
 }
