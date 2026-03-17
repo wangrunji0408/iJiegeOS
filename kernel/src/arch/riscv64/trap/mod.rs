@@ -195,6 +195,14 @@ pub extern "C" fn kernel_trap_handler(ctx: &mut TrapContext) {
     match scause.cause() {
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
             crate::timer::handle_timer_interrupt();
+            {
+                use core::sync::atomic::{AtomicU64, Ordering};
+                static KTICK: AtomicU64 = AtomicU64::new(0);
+                let tick = KTICK.fetch_add(1, Ordering::Relaxed);
+                if tick % 500 == 0 {
+                    log::warn!("ktimer: sepc={:#x}", ctx.sepc);
+                }
+            }
         }
         Trap::Interrupt(Interrupt::SupervisorExternal) => {
             crate::drivers::handle_external_interrupt();
