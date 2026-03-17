@@ -220,7 +220,7 @@ pub fn sys_epoll_pwait(epfd: usize, events: *mut u8, maxevents: i32, timeout: i3
     }
 
     let n = ready_events.len().min(maxevents as usize);
-    log::warn!("ew{}", n);
+    log::debug!("ew{}", n);
     let event_size = core::mem::size_of::<EpollEvent>();
     let bufs = translated_byte_buffer(tok, events, n * event_size);
     let mut off = 0;
