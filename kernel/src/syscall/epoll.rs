@@ -89,6 +89,10 @@ pub fn sys_epoll_ctl(epfd: usize, op: i32, fd: usize, event: *const u8) -> i64 {
         Some(f) => f,
         None => return EBADF,
     };
+    let epoll_id = match epoll_file.epoll_id() {
+        Some(id) => id,
+        None => return EINVAL,
+    };
     drop(inner);
 
     // 读取事件
@@ -107,13 +111,9 @@ pub fn sys_epoll_ctl(epfd: usize, op: i32, fd: usize, event: *const u8) -> i64 {
         None
     };
 
-    // 找到 epoll 实例
-    let epoll_id = epfd;  // 简化：直接用 fd 作为 id
     let mut store = EPOLL_STORE.lock();
 
-    // 实际上我们需要通过 epoll_file 获取 id
-    // 简化处理
-    if let Some(instance) = store.instances.values_mut().next() {
+    if let Some(instance) = store.instances.get_mut(&epoll_id) {
         match op {
             1 => {  // EPOLL_CTL_ADD
                 if let Some(evt) = evt {
