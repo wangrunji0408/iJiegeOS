@@ -87,7 +87,7 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> i64 {
         let mut content = alloc::vec::Vec::new();
         for s in user_buf.iter() { content.extend_from_slice(s); }
         if let Ok(s) = core::str::from_utf8(&content) {
-            log::warn!("sys_write fd={} len={}: {:?}", fd, len, s);
+            log::debug!("sys_write fd={} len={}: {:?}", fd, len, s);
         }
         let mut total = 0i64;
         for slice in content.chunks(512) {
