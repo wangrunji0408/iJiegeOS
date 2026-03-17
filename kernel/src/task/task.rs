@@ -128,6 +128,9 @@ impl Task {
         *trap_cx = TrapContext::new(entry_point, user_sp);
         // 设置用户页表 satp，以便 __restore 时切换
         trap_cx.user_satp = memory_set.token();
+        // 设置内核页表 satp（当前 satp，用于陷阱时切换回）
+        // 如果内核未激活页表（satp=0），则使用 0（无需切换）
+        trap_cx.kernel_satp = riscv::register::satp::read().bits();
 
         // 创建内核任务上下文
         // ra = trap_return，sp 指向 TrapContext 的位置
