@@ -153,13 +153,20 @@ pub fn handle_virtio_interrupt(irq: usize) {
 pub fn net_receive_packet() -> Option<alloc::vec::Vec<u8>> {
     let mut dev = NET_DEVICE.lock();
     if let Some(ref mut net) = dev.as_mut() {
+        if !net.can_recv() {
+            return None;
+        }
         match net.receive() {
             Ok(rx_buf) => {
                 let pkt = rx_buf.packet().to_vec();
+                log::warn!("net_receive_packet: got {} bytes", pkt.len());
                 net.recycle_rx_buffer(rx_buf).ok();
                 Some(pkt)
             }
-            Err(_) => None,
+            Err(e) => {
+                log::debug!("net_receive_packet: receive error: {:?}", e);
+                None
+            }
         }
     } else {
         None
