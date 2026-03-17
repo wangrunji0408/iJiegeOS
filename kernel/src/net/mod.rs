@@ -138,6 +138,13 @@ pub fn setup_interface(mac: [u8; 6]) {
 
     log::info!("net: interface configured: 10.0.2.15/24, gw=10.0.2.2, mac={:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
         mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+
+    // 发送 GARP（Gratuitous ARP）让 QEMU slirp 学习 VM 的 MAC 地址
+    // ARP 以太网帧：目标 broadcast, 源 VM MAC, ARP request for our own IP
+    let garp = make_garp_packet(&mac, &[10, 0, 2, 15]);
+    drop(guard_placeholder);  // 先确保释放之前的 lock
+    crate::drivers::net_send_packet(&garp);
+    log::info!("net: sent GARP packet");
 }
 
 fn smoltcp_now() -> Instant {
