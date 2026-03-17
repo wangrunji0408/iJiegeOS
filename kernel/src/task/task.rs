@@ -34,7 +34,8 @@ pub struct TaskInner {
     pub state: TaskState,
     pub task_cx: TaskContext,
     pub memory_set: MemorySet,
-    pub trap_cx_ppn: crate::mm::PhysPageNum,
+    /// TrapContext 保存在内核栈上，这是内核栈中 TrapContext 的地址
+    pub trap_cx_addr: usize,
     pub parent: Option<Weak<Task>>,
     pub children: Vec<Arc<Task>>,
     pub exit_code: i32,
@@ -101,6 +102,11 @@ impl KernelStack {
         let bottom = self.data.as_ptr() as usize;
         bottom + self.data.len()
     }
+
+    /// 在栈顶分配 TrapContext 空间（向下生长）
+    pub fn trap_cx_addr(&self) -> usize {
+        self.top() - core::mem::size_of::<TrapContext>()
+    }
 }
 
 impl Task {
@@ -108,42 +114,41 @@ impl Task {
     pub fn new_from_elf(elf_data: &[u8]) -> Self {
         let pid = PID_ALLOCATOR.alloc();
         let kernel_stack = KernelStack::new();
-        let kernel_sp = kernel_stack.top();
+
+        // TrapContext 放在内核栈顶部
+        let trap_cx_addr = kernel_stack.trap_cx_addr();
+        // 内核 sp 指向 TrapContext 位置（向下，trap_cx_addr 就是 TrapContext 起始）
+        let kernel_sp = trap_cx_addr;
 
         // 创建用户地址空间
-        let (mut memory_set, user_sp, entry_point) = MemorySet::new_user(elf_data);
+        let (memory_set, user_sp, entry_point) = MemorySet::new_user(elf_data);
 
-        // 获取 TrapContext 的物理页号
-        let trap_cx_ppn = memory_set.translate(
-            VirtAddr::from(TRAP_CONTEXT_BASE).floor()
-        ).unwrap().ppn();
-
-        // 创建 TrapContext
-        let trap_cx = trap_cx_ppn.get_mut::<TrapContext>();
-        *trap_cx = TrapContext::new(
-            entry_point,
-            user_sp,
-        );
+        // 创建 TrapContext 并放在内核栈上
+        let trap_cx = unsafe { &mut *(trap_cx_addr as *mut TrapContext) };
+        *trap_cx = TrapContext::new(entry_point, user_sp);
 
         // 创建内核任务上下文
+        // ra = trap_return，sp 指向 TrapContext 的位置
         let task_cx = TaskContext::goto_trap_return(kernel_sp);
 
         // 初始化文件描述符表
         let fd_table = setup_initial_fds();
 
+        let heap_start = user_sp; // 将在ELF加载后修正
+
         let inner = TaskInner {
             state: TaskState::Ready,
             task_cx,
             memory_set,
-            trap_cx_ppn,
+            trap_cx_addr,
             parent: None,
             children: Vec::new(),
             exit_code: 0,
             pending_signals: Vec::new(),
             fd_table,
             cwd: String::from("/"),
-            heap_start: user_sp,  // 将在ELF加载后设置
-            heap_end: user_sp,
+            heap_start,
+            heap_end: heap_start,
             uid: 0,
             gid: 0,
             euid: 0,
@@ -171,7 +176,7 @@ impl Task {
 
 impl TaskInner {
     pub fn get_trap_cx(&self) -> &'static mut TrapContext {
-        self.trap_cx_ppn.get_mut()
+        unsafe { &mut *(self.trap_cx_addr as *mut TrapContext) }
     }
 
     pub fn get_user_token(&self) -> usize {
