@@ -195,7 +195,7 @@ pub fn sys_sendto(fd: usize, buf: *const u8, len: usize, flags: i32, dest_addr: 
     for b in bufs {
         data.extend_from_slice(b);
     }
-    file.write(&data)
+    file.write(&data) as i64
 }
 
 pub fn sys_recvfrom(fd: usize, buf: *mut u8, len: usize, flags: i32, src_addr: *mut u8, addrlen: *mut u32) -> i64 {
@@ -209,7 +209,7 @@ pub fn sys_recvfrom(fd: usize, buf: *mut u8, len: usize, flags: i32, src_addr: *
 
     let mut kernel_buf = alloc::vec![0u8; len];
     let n = file.read(&mut kernel_buf);
-    if n <= 0 { return n; }
+    if n <= 0 { return n as i64; }
 
     let tok = token();
     let bufs = translated_byte_buffer(tok, buf, n as usize);
@@ -223,7 +223,7 @@ pub fn sys_recvfrom(fd: usize, buf: *mut u8, len: usize, flags: i32, src_addr: *
         *translated_refmut(tok, addrlen) = 0u32;
     }
 
-    n
+    n as i64
 }
 
 pub fn sys_setsockopt(fd: usize, level: i32, optname: i32, optval: *const u8, optlen: u32) -> i64 {
