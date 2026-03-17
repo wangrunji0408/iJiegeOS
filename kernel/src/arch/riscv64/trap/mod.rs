@@ -105,8 +105,8 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
                 if syscall_id == 220 { FORK_HAPPENED.store(true, Ordering::Relaxed); }
                 let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(0);
                 if !FORK_HAPPENED.load(Ordering::Relaxed) {
-                    // fork 之前：记录 pid=1 的所有 syscall（排除频繁的 read/write/epoll）
-                    let noisy = matches!(syscall_id, 63 | 64 | 22 | 101 | 102 | 260);
+                    // fork 之前：记录所有 syscall（排除只有 write 到 stdout/stderr）
+                    let noisy = syscall_id == 64 && (args[0] == 1 || args[0] == 2);
                     if !noisy {
                         log::warn!("[{}]sc{}({:#x},{:#x})={}", pid, syscall_id, args[0], args[1], ret);
                     }
