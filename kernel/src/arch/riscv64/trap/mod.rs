@@ -92,6 +92,9 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
             let args = ctx.syscall_args();
             log::debug!("syscall: id={}, args={:?}", syscall_id, args);
             let ret = crate::syscall::syscall(syscall_id, args, ctx);
+            if syscall_id == 222 || syscall_id == 214 || syscall_id == 226 {
+                log::debug!("syscall {} ret={:#x}", syscall_id, ret as usize);
+            }
             ctx.set_return_value(ret as usize);
         }
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
