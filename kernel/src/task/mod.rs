@@ -1,8 +1,8 @@
-mod task;
-mod manager;
-mod scheduler;
-mod pid;
-mod context;
+pub mod task;
+pub mod manager;
+pub mod scheduler;
+pub mod pid;
+pub mod context;
 
 pub use task::{Task, TaskState, TaskInner};
 pub use manager::{add_task, remove_task, get_task, TASK_MANAGER};
