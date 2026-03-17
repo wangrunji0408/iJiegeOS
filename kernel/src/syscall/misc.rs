@@ -138,10 +138,12 @@ pub fn sys_futex(uaddr: usize, op: i32, val: u32, timeout: usize, uaddr2: usize,
     let futex_op = op & 0x7f;  // 去掉 FUTEX_PRIVATE_FLAG
     match futex_op {
         0 => {  // FUTEX_WAIT
-            let current = *crate::mm::translated_ref(token(), uaddr as *const u32);
+            let tok = token();
+            let current = *crate::mm::translated_ref(tok, uaddr as *const u32);
             if current != val {
                 return EAGAIN;
             }
+            log::warn!("futex_wait: addr={:#x} val={}", uaddr, val);
             // 简化：让出 CPU
             crate::task::suspend_current_and_run_next();
             0
