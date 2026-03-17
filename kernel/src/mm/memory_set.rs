@@ -423,12 +423,14 @@ impl MemorySet {
             // 需要分配新页
             let flags = PTEFlags::V | PTEFlags::R | PTEFlags::W | PTEFlags::U | PTEFlags::A | PTEFlags::D;
             for vpn in VPNRange::new(old_end_vpn, new_end_vpn).into_iter() {
+                if self.page_table.translate(vpn).map(|e| e.is_valid()).unwrap_or(false) {
+                    // 已映射（可能被 mmap 占用），跳过
+                    continue;
+                }
                 if let Some(frame) = frame_alloc() {
                     let ppn = frame.ppn;
                     self.page_table.map(vpn, ppn, flags);
-                    // 需要记录这个 frame... 简化处理：用 area 管理
-                    // 实际上需要一个 heap area
-                    // 把 frame 放入一个专门的 heap_frames（这里简化）
+                    // 简化：不记录 frame，帧泄漏（将来需要 heap_frames 管理）
                 }
             }
         }
