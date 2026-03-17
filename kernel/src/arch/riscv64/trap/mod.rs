@@ -126,7 +126,8 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
                 let tick = TICK.fetch_add(1, Ordering::Relaxed);
                 if tick % 100 == 0 {
                     let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(0);
-                    log::error!("timer: pid={} sepc={:#x} sp={:#x}", pid, ctx.sepc, ctx.x[2]);
+                    log::error!("timer: pid={} sepc={:#x} sp={:#x} a0={:#x} a1={:#x} a2={:#x} ra={:#x}",
+                        pid, ctx.sepc, ctx.x[2], ctx.x[10], ctx.x[11], ctx.x[12], ctx.x[1]);
                 }
             }
             crate::task::suspend_current_and_run_next();
