@@ -14,9 +14,13 @@ pub const MEMORY_START: usize = 0x80000000;
 pub const MEMORY_END: usize = 0x88000000;
 
 pub fn init() {
+    crate::println!("mm: init heap...");
     heap::init_heap();
+    crate::println!("mm: init frame allocator...");
     frame::init_frame_allocator();
+    crate::println!("mm: init kernel space...");
     memory_set::init_kernel_space();
+    crate::println!("mm: done");
 }
 
 /// 处理页面错误（懒分配）
