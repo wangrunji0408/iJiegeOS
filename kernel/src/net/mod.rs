@@ -298,10 +298,10 @@ pub fn tcp_recv(handle: SocketHandle, buf: &mut [u8]) -> isize {
                 Ok(n) => n as isize,
                 Err(_) => -1,
             }
-        } else if tcp_sock.is_active() {
-            0  // 无数据，稍后重试
+        } else if tcp_sock.is_active() || tcp_sock.may_recv() {
+            -11  // EAGAIN：连接仍活跃但暂无数据
         } else {
-            -1  // 连接关闭
+            0  // EOF：连接已关闭
         }
     } else {
         -1
