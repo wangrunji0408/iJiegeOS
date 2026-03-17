@@ -105,10 +105,15 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
                 if syscall_id == 220 { FORK_HAPPENED.store(true, Ordering::Relaxed); }
                 let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(0);
                 if FORK_HAPPENED.load(Ordering::Relaxed) {
-                    // fork 之后：只记录 pid=2 的 accept4
-                    let interesting = matches!(syscall_id, 242 | 202);
+                    // fork 之后：记录 pid=2 的关键 syscall
+                    let interesting = matches!(syscall_id,
+                        242 | 202 |  // accept4, accept
+                        64 | 66 |    // write, writev
+                        63 | 65 |    // read, readv
+                        210 | 206 | 211  // shutdown, sendto, sendmsg
+                    );
                     if pid == 2 && interesting {
-                        log::warn!("[2]sc{}({:#x})={}", syscall_id, args[0], ret);
+                        log::warn!("[2]sc{}(fd={})={}", syscall_id, args[0], ret);
                     }
                 }
                 // 记录 sc258 的调用 PC（sepc 已经 +4，需要减去 4）
