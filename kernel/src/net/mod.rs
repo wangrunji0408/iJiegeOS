@@ -277,6 +277,17 @@ pub fn tcp_accept(port: u16) -> Option<SocketHandle> {
         .and_then(|q| q.pop_front())
 }
 
+/// 检查 smoltcp socket 是否有数据可读
+pub fn tcp_can_recv(handle: SocketHandle) -> bool {
+    let guard = NET_IFACE.lock();
+    if let Some(ref state) = guard.as_ref() {
+        let tcp_sock = state.sockets.get::<tcp::Socket>(handle);
+        tcp_sock.can_recv()
+    } else {
+        false
+    }
+}
+
 /// 从 smoltcp socket 读取数据
 pub fn tcp_recv(handle: SocketHandle, buf: &mut [u8]) -> isize {
     let mut guard = NET_IFACE.lock();
