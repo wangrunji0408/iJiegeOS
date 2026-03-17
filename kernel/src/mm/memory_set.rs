@@ -480,16 +480,16 @@ impl MemorySet {
             ".rodata",
         ), None);
 
-        // .data
+        // .data + .bss.stack（包含启动栈）
         memory_set.push(MapArea::new(
             (sdata as usize).into(),
-            (edata as usize).into(),
+            (sbss as usize).into(),
             MapType::Identical,
             MapPermission::R | MapPermission::W,
-            ".data",
+            ".data+stack",
         ), None);
 
-        // .bss
+        // .bss（含内核堆 HEAP_SPACE）
         memory_set.push(MapArea::new(
             (sbss as usize).into(),
             (ebss as usize).into(),
