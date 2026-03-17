@@ -130,7 +130,8 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
                 static FORK2: AtomicBool = AtomicBool::new(false);
                 if syscall_id == 220 { FORK2.store(true, Ordering::Relaxed); }
                 let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(0);
-                if FORK2.load(Ordering::Relaxed) && pid == 2 {
+                let is_net_sc = syscall_id >= 198 && syscall_id <= 203;
+                if (FORK2.load(Ordering::Relaxed) && pid == 2) || (pid == 1 && is_net_sc) {
                     fn p(c: u8) { crate::arch::sbi::console_putchar(c); }
                     fn ps(s: &str) { for b in s.bytes() { p(b); } }
                     fn ph(mut n: u64) {
@@ -145,7 +146,7 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
                         while n > 0 { i -= 1; buf[i] = b'0' + (n % 10) as u8; n /= 10; }
                         for b in &buf[i..] { p(*b); }
                     }
-                    ps("[2]sc"); pd(syscall_id as u64);
+                    ps("["); pd(pid as u64); ps("]sc"); pd(syscall_id as u64);
                     ps("("); ph(args[0] as u64); ps(","); ph(args[1] as u64); ps(","); ph(args[2] as u64);
                     ps(")\n");
                 }
