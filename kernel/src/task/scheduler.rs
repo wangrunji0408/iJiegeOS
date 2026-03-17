@@ -105,6 +105,16 @@ pub fn suspend_current_and_run_next() {
         sbi_puts("S5\n");  // inner 释放
 
         // 把当前任务放回就绪队列
+        // 先尝试 try_lock 诊断
+        match TASK_MANAGER.try_lock() {
+            Some(_guard) => {
+                sbi_puts("TASK_MANAGER_FREE\n");
+                drop(_guard);
+            }
+            None => {
+                sbi_puts("TASK_MANAGER_LOCKED!\n");
+            }
+        }
         TASK_MANAGER.lock().push_ready(task.clone());
         sbi_puts("S6\n");  // push_ready 完成
 
