@@ -113,7 +113,8 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
                 }
                 // 记录 sc258 的调用 PC（sepc 已经 +4，需要减去 4）
                 if syscall_id == 258 {
-                    log::error!("sc258 called from sepc={:#x}", ctx.sepc - 4);
+                    log::error!("sc258 called from sepc={:#x} ra={:#x} a0={:#x} a1={:#x}",
+                        ctx.sepc - 4, ctx.x[1], ctx.x[10], ctx.x[11]);
                 }
             }
             if syscall_id == 222 || syscall_id == 214 || syscall_id == 226 {
