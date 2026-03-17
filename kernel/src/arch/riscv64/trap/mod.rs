@@ -108,7 +108,7 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
                     // 只记录 worker 进程（pid>1）的非频繁 syscall
                     // pid=2(worker) 只记录非频繁调用；pid=1 不记录
                     // 记录 pid=2 accept4 调用
-                    let interesting = matches!(syscall_id, 242 | 202 | 22);
+                    let interesting = matches!(syscall_id, 242 | 202);
                     if pid == 2 && interesting {
                         log::warn!("[2]sc{}({:#x})={}", syscall_id, args[0], ret);
                     }
