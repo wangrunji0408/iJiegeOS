@@ -270,8 +270,8 @@ impl MemorySet {
         let start = if hint == 0 {
             self.find_free_area(len)
         } else {
-            // 对齐到页边界
-            (hint + 4095) & !4095
+            // MAP_FIXED: 使用精确地址（页对齐）
+            hint & !4095
         };
         let end = (start + len + 4095) & !4095;
 
@@ -288,9 +288,13 @@ impl MemorySet {
         if prot & 2 != 0 { flags |= PTEFlags::W; }
         if prot & 4 != 0 { flags |= PTEFlags::X; }
         for vpn in VPNRange::new(start_vpn, end_vpn).into_iter() {
-            if let Some(frame) = frame_alloc() {
-                let ppn = frame.ppn;
-                if !self.page_table.translate(vpn).map(|e| e.is_valid()).unwrap_or(false) {
+            if self.page_table.translate(vpn).map(|e| e.is_valid()).unwrap_or(false) {
+                // 已有映射：仅更新权限（MAP_FIXED 覆盖已有映射）
+                self.page_table.set_flags(vpn, flags);
+            } else {
+                // 分配新帧
+                if let Some(frame) = frame_alloc() {
+                    let ppn = frame.ppn;
                     self.page_table.map(vpn, ppn, flags);
                     area.data_frames.insert(vpn, frame);
                 }
