@@ -3,7 +3,7 @@ use core::arch::asm;
 use crate::task::{Task, TaskState, TaskContext, CURRENT_TASK, TASK_MANAGER};
 
 /// 切换上下文汇编
-#[naked]
+#[unsafe(naked)]
 unsafe extern "C" fn __switch(
     current_task_cx_ptr: *mut TaskContext,
     next_task_cx_ptr: *const TaskContext,
@@ -141,7 +141,7 @@ pub fn exit_current_and_run_next(exit_code: usize) {
 
 /// trap_return: 从内核态返回用户态
 /// 这是新任务第一次切换时的目标
-#[naked]
+#[unsafe(naked)]
 #[no_mangle]
 pub unsafe extern "C" fn trap_return() {
     core::arch::naked_asm!(
