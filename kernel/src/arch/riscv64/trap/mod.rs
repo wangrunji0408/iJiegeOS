@@ -226,8 +226,8 @@ pub extern "C" fn debug_before_sret(trap_cx: &TrapContext) {
     static SRET_COUNT: AtomicU64 = AtomicU64::new(0);
     let count = SRET_COUNT.fetch_add(1, Ordering::Relaxed);
     let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(9999);
-    // 打印前 200 次，或者 pid=2 的所有调用
-    if count < 200 || pid == 2 {
+    // 只打印 pid=2 的前10次
+    if pid == 2 && count < 10000 {
         log::error!("sret[{}]: pid={} sepc={:#x} user_sp={:#x} user_satp={:#x} sstatus={:#x}",
             count, pid, trap_cx.sepc, trap_cx.x[2], trap_cx.user_satp, trap_cx.sstatus);
     }
@@ -240,8 +240,8 @@ pub extern "C" fn sbi_debug_restore(trap_cx: &TrapContext) {
     static RESTORE_COUNT: AtomicU64 = AtomicU64::new(0);
     let count = RESTORE_COUNT.fetch_add(1, Ordering::Relaxed);
     let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(9999);
-    // 总是打印 pid=2 的前100次，或者总计前200次
-    if count < 200 || pid == 2 {
+    // 只打印 pid=2 的前10次
+    if pid == 2 && count < 10000 {
         // 使用 SBI 直接输出，避免 Mutex 死锁
         fn putchar(c: u8) { crate::arch::sbi::console_putchar(c); }
         fn print_str(s: &str) { for b in s.bytes() { putchar(b); } }
