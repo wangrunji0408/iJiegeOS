@@ -336,18 +336,30 @@ impl MemorySet {
     }
 
     fn find_free_area(&self, len: usize) -> usize {
-        // 从 0x40000000 开始查找
-        let mut candidate = 0x40000000usize;
+        // 从 0x70000000 开始查找（高于 brk 区域，避免冲突）
+        let mut candidate = 0x70000000usize;
         loop {
             let end = (candidate + len + 4095) & !4095;
             let mut conflict = false;
-            for area in &self.areas {
-                let area_start: usize = VirtAddr::from(area.vpn_range.get_start()).into();
-                let area_end: usize = VirtAddr::from(area.vpn_range.get_end()).into();
-                if candidate < area_end && end > area_start {
-                    candidate = (area_end + 4095) & !4095;
+
+            // 检查 brk 区域
+            if self.brk_start > 0 {
+                let brk_end = (self.brk + 4095) & !4095;
+                if candidate < brk_end && end > self.brk_start {
+                    candidate = (brk_end + 4095) & !4095;
                     conflict = true;
-                    break;
+                }
+            }
+
+            if !conflict {
+                for area in &self.areas {
+                    let area_start: usize = VirtAddr::from(area.vpn_range.get_start()).into();
+                    let area_end: usize = VirtAddr::from(area.vpn_range.get_end()).into();
+                    if candidate < area_end && end > area_start {
+                        candidate = (area_end + 4095) & !4095;
+                        conflict = true;
+                        break;
+                    }
                 }
             }
             if !conflict {
