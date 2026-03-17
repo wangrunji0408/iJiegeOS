@@ -50,15 +50,24 @@ pub fn sys_read(fd: usize, buf: *mut u8, len: usize) -> i64 {
         Some(f) => f,
         None => return EBADF,
     };
+    let pid = task.pid.0;
     drop(inner);
 
     let mut user_buf = translated_byte_buffer(token(), buf, len);
     let mut total = 0i64;
     for slice in user_buf.iter_mut() {
         let n = file.read(slice);
-        if n < 0 { return n as i64; }
+        if n < 0 {
+            if pid > 1 {
+                log::warn!("[pid={}] read fd={} len={} → err={}", pid, fd, len, n);
+            }
+            return n as i64;
+        }
         total += n as i64;
         if (n as usize) < slice.len() { break; }
+    }
+    if pid > 1 && total == 0 && len > 0 {
+        log::warn!("[pid={}] read fd={} len={} → EOF/EAGAIN (total={})", pid, fd, len, total);
     }
     total
 }
