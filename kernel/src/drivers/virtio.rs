@@ -161,7 +161,6 @@ pub fn net_receive_packet() -> Option<alloc::vec::Vec<u8>> {
         match net.receive() {
             Ok(rx_buf) => {
                 let pkt = rx_buf.packet().to_vec();
-                // 必须回收 rx buffer，否则设备无法继续接收
                 net.recycle_rx_buffer(rx_buf).ok();
                 Some(pkt)
             }
@@ -177,10 +176,8 @@ pub fn net_send_packet(data: &[u8]) {
     let mut dev = NET_DEVICE.lock();
     if let Some(ref mut net) = dev.as_mut() {
         if net.can_send() {
-            let tx_buf = net.new_tx_buffer(data.len());
-            // TxBuffer 的 packet_mut() 和 from()
             use virtio_drivers::device::net::TxBuffer;
-            let mut tx = TxBuffer::from(data);
+            let tx = TxBuffer::from(data);
             let _ = net.send(tx);
         }
     }
