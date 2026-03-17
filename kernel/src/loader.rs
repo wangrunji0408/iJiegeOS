@@ -7,9 +7,8 @@ use xmas_elf::{
     header,
 };
 use crate::mm::{
-    MemorySet, MapArea, MapType, MapPermission, VirtAddr, PhysAddr, PAGE_SIZE,
+    MemorySet, MapArea, MapType, MapPermission, VirtAddr, PhysAddr, PAGE_SIZE, StepByOne,
 };
-use crate::mm::address::StepByOne;
 
 /// 用户栈大小：8MB
 pub const USER_STACK_SIZE: usize = 8 * 1024 * 1024;
