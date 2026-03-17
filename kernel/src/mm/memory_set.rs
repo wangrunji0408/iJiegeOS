@@ -285,6 +285,7 @@ impl MemorySet {
         let mut area = MmapArea {
             start, end, prot, flags: 0,
             data_frames: BTreeMap::new(),
+            file: None, file_offset: 0,
         };
 
         // 立即分配
@@ -645,6 +646,8 @@ impl MemorySet {
                 prot: mmap.prot,
                 flags: mmap.flags,
                 data_frames: BTreeMap::new(),
+                file: mmap.file.clone(),
+                file_offset: mmap.file_offset,
             };
             // 遍历该 mmap 区域的所有 VPN，复制父进程页表中已有的映射
             let start_vpn = VirtAddr::from(mmap.start).floor();
