@@ -287,22 +287,47 @@ impl MemorySet {
         let start_vpn = VirtAddr::from(start).floor();
         let end_vpn = VirtAddr::from(end).ceil();
 
-        self.mmap_areas.retain(|area| {
-            if area.start >= start && area.end <= end {
-                // 解映射此区域
-                for vpn in VPNRange::new(
-                    VirtAddr::from(area.start).floor(),
-                    VirtAddr::from(area.end).ceil()
-                ).into_iter() {
-                    if self.page_table.translate(vpn).map(|e| e.is_valid()).unwrap_or(false) {
-                        // 不能在这里 unmap（借用冲突）
-                    }
-                }
-                false
-            } else {
-                true
+        // 需要拆分/截断部分重叠的 area，收集新产生的 area
+        let mut new_areas: Vec<MmapArea> = Vec::new();
+
+        self.mmap_areas.retain_mut(|area| {
+            // 无重叠：保留
+            if area.end <= start || area.start >= end {
+                return true;
             }
+            // 完全包含：删除
+            if area.start >= start && area.end <= end {
+                return false;
+            }
+            // 左侧超出：截断右侧
+            if area.start < start && area.end <= end {
+                area.end = start;
+                return true;
+            }
+            // 右侧超出：截断左侧
+            if area.start >= start && area.end > end {
+                area.start = end;
+                return true;
+            }
+            // 跨越：拆分为两个 area
+            // area.start < start && area.end > end
+            let right = MmapArea {
+                start: end,
+                end: area.end,
+                prot: area.prot,
+                flags: area.flags,
+                data_frames: BTreeMap::new(),
+                file: area.file.clone(),
+                file_offset: area.file_offset + (end - area.start),
+            };
+            area.end = start;
+            new_areas.push(right);
+            true
         });
+
+        for a in new_areas {
+            self.mmap_areas.push(a);
+        }
 
         // 在页表中解映射
         for vpn in VPNRange::new(start_vpn, end_vpn).into_iter() {
