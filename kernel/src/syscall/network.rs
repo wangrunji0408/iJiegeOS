@@ -51,6 +51,10 @@ pub fn sys_bind(fd: usize, addr: *const u8, addrlen: u32) -> i64 {
     };
 
     if let Some(sa) = crate::net::parse_sockaddr(&addr_bytes) {
+        fn p(c: u8) { crate::arch::sbi::console_putchar(c); }
+        fn ps(s: &str) { for b in s.bytes() { p(b); } }
+        fn pd(mut n: u64) { if n==0{p(b'0');return;} let mut buf=[0u8;20]; let mut i=20; while n>0{i-=1;buf[i]=b'0'+(n%10)as u8;n/=10;} for b in &buf[i..]{p(*b);} }
+        ps("bind:fd="); pd(fd as u64); ps(" port="); pd(sa.port as u64); ps("\n");
         log::debug!("bind:{} port={}", fd, sa.port);
         let mut inner = socket.inner.lock();
         inner.local_addr = Some(sa);
