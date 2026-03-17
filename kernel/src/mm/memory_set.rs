@@ -264,6 +264,11 @@ impl MemorySet {
         };
         let end = (start + len + 4095) & !4095;
 
+        // MAP_FIXED: 先解除与新范围重叠的旧映射
+        if hint != 0 {
+            self.munmap(start, end - start);
+        }
+
         // 懒加载：不立即分配物理内存，page fault 时才分配
         let area = MmapArea {
             start, end, prot, flags: 0,
@@ -411,6 +416,11 @@ impl MemorySet {
             hint & !4095
         };
         let end = (start + len + 4095) & !4095;
+
+        // MAP_FIXED: 先解除与新范围重叠的旧映射
+        if hint != 0 {
+            self.munmap(start, end - start);
+        }
 
         // 不分配物理内存，只注册虚拟地址范围
         let area = MmapArea {
