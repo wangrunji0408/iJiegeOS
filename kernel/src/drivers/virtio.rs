@@ -80,50 +80,37 @@ pub fn probe_virtio_devices(_dtb_pa: usize) {
 }
 
 fn probe_device(base: usize) {
-    let header = unsafe { &mut *(base as *mut VirtIOHeader) };
+    let header = core::ptr::NonNull::new(base as *mut VirtIOHeader).unwrap();
 
-    // 检查魔数
-    if header.magic_value() != 0x74726976 {
-        return;
-    }
+    // MmioTransport::new validates magic, version, and device_id
+    let transport = match unsafe { MmioTransport::new(header) } {
+        Ok(t) => t,
+        Err(_) => return,
+    };
 
-    if header.version() != 2 {
-        return;
-    }
-
-    let device_type = header.device_type();
+    let device_type = transport.device_type();
     log::info!("VirtIO device at {:#x}: type={:?}", base, device_type);
 
     match device_type {
         DeviceType::Block => {
-            match MmioTransport::new(header.into()) {
-                Ok(transport) => {
-                    match VirtIOBlk::<VirtioHalImpl, MmioTransport>::new(transport) {
-                        Ok(mut blk) => {
-                            log::info!("VirtIO Block: capacity={} sectors", blk.capacity());
-                            *BLK_DEVICE.lock() = Some(blk);
-                        }
-                        Err(e) => log::error!("VirtIO Block init failed: {:?}", e),
-                    }
+            match VirtIOBlk::<VirtioHalImpl, MmioTransport>::new(transport) {
+                Ok(mut blk) => {
+                    log::info!("VirtIO Block: capacity={} sectors", blk.capacity());
+                    *BLK_DEVICE.lock() = Some(blk);
                 }
-                Err(e) => log::error!("VirtIO MMIO transport failed: {:?}", e),
+                Err(e) => log::error!("VirtIO Block init failed: {:?}", e),
             }
         }
         DeviceType::Network => {
-            match MmioTransport::new(header.into()) {
-                Ok(transport) => {
-                    match VirtIONet::<VirtioHalImpl, MmioTransport, 16>::new(transport, 4096) {
-                        Ok(mut net) => {
-                            let mac = net.mac_address();
-                            log::info!("VirtIO Net: MAC={:x}:{:x}:{:x}:{:x}:{:x}:{:x}",
-                                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-                            crate::net::setup_interface(mac);
-                            *NET_DEVICE.lock() = Some(net);
-                        }
-                        Err(e) => log::error!("VirtIO Net init failed: {:?}", e),
-                    }
+            match VirtIONet::<VirtioHalImpl, MmioTransport, 16>::new(transport, 4096) {
+                Ok(mut net) => {
+                    let mac = net.mac_address();
+                    log::info!("VirtIO Net: MAC={:x}:{:x}:{:x}:{:x}:{:x}:{:x}",
+                        mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+                    crate::net::setup_interface(mac);
+                    *NET_DEVICE.lock() = Some(net);
                 }
-                Err(e) => log::error!("VirtIO MMIO transport failed: {:?}", e),
+                Err(e) => log::error!("VirtIO Net init failed: {:?}", e),
             }
         }
         _ => {}
