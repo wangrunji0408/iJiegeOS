@@ -663,6 +663,10 @@ impl MemorySet {
 
         // 复制 brk 帧
         for (vpn, src_frame) in &user_space.brk_frames {
+            // 跳过已被 mmap 区域映射的 vpn（MAP_FIXED 可能覆盖了 brk 区域）
+            if memory_set.page_table.translate(*vpn).map(|e| e.is_valid()).unwrap_or(false) {
+                continue;
+            }
             if let Some(dst_frame) = frame_alloc() {
                 dst_frame.ppn.get_bytes_array().copy_from_slice(src_frame.ppn.get_bytes_array());
                 let flags = user_space.page_table.translate(*vpn)
