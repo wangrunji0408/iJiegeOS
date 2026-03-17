@@ -45,7 +45,7 @@ pub fn sys_bind(fd: usize, addr: *const u8, addrlen: u32) -> i64 {
     };
     drop(inner);
 
-    let socket = match file.as_any_ref::<Socket>() {
+    let socket = match file.as_socket() {
         Some(s) => s,
         None => return ENOTSOCK,
     };
@@ -75,7 +75,7 @@ pub fn sys_listen(fd: usize, backlog: i32) -> i64 {
     drop(inner);
 
     // 设置监听状态
-    if let Some(socket) = file.as_any_ref::<Socket>() {
+    if let Some(socket) = file.as_socket() {
         socket.inner.lock().listening = true;
     }
     0
@@ -93,7 +93,7 @@ pub fn sys_accept(fd: usize, addr: *mut u8, addrlen: *mut u32) -> i64 {
 
     // 从 smoltcp 接受连接
     // 简化版本：使用内部缓冲
-    let socket = match file.as_any_ref::<Socket>() {
+    let socket = match file.as_socket() {
         Some(s) => s,
         None => return ENOTSOCK,
     };
@@ -151,7 +151,7 @@ pub fn sys_connect(fd: usize, addr: *const u8, addrlen: u32) -> i64 {
     drop(inner);
 
     if let Some(sa) = crate::net::parse_sockaddr(&addr_bytes) {
-        if let Some(socket) = file.as_any_ref::<Socket>() {
+        if let Some(socket) = file.as_socket() {
             let mut inner = socket.inner.lock();
             inner.peer_addr = Some(sa);
             inner.connected = true;
@@ -238,12 +238,12 @@ pub fn sys_setsockopt(fd: usize, level: i32, optname: i32, optval: *const u8, op
     // 常见选项处理
     match (level, optname) {
         (1, 2) => {  // SOL_SOCKET, SO_REUSEADDR
-            if let Some(socket) = file.as_any_ref::<Socket>() {
+            if let Some(socket) = file.as_socket() {
                 socket.inner.lock().reuse_addr = true;
             }
         }
         (6, 1) => {  // IPPROTO_TCP, TCP_NODELAY
-            if let Some(socket) = file.as_any_ref::<Socket>() {
+            if let Some(socket) = file.as_socket() {
                 socket.inner.lock().tcp_nodelay = true;
             }
         }
