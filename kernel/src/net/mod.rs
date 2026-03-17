@@ -164,7 +164,10 @@ pub fn poll() {
         let mut guard = NET_IFACE.lock();
         if let Some(ref mut state) = guard.as_mut() {
             let timestamp = smoltcp_now();
-            state.iface.poll(timestamp, &mut state.device, &mut state.sockets);
+            let changed = state.iface.poll(timestamp, &mut state.device, &mut state.sockets);
+            if changed {
+                log::warn!("net::poll: smoltcp state changed, tx_buf.len={}", state.device.tx_buf.len());
+            }
         }
     }
 
