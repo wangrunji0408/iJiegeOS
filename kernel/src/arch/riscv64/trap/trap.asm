@@ -124,6 +124,12 @@ __restore:
     # 下次陷阱时，__alltraps 会交换 sp 和 sscratch
     csrw sscratch, sp
 
+    # 调试：在恢复寄存器前打印 sret 信息
+    # sp 还指向 TrapContext，sepc 还在 t0 寄存器
+    # 使用 a0 = sp (TrapContext ptr) 调用 debug_before_sret
+    mv a0, sp
+    call debug_before_sret
+
     # 恢复通用寄存器（除了 sp）
     ld x1, 8(sp)
     ld x3, 24(sp)
