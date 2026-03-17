@@ -189,7 +189,6 @@ pub fn sys_epoll_pwait(epfd: usize, events: *mut u8, maxevents: i32, timeout: i3
     drop(inner);
 
     if ready_events.is_empty() && timeout == 0 {
-        log::warn!("epoll_pwait: timeout=0, no events, returning 0");
         return 0;
     }
 
