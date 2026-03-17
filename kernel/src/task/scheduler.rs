@@ -66,6 +66,24 @@ pub fn run_first_task() -> ! {
     unreachable!()
 }
 
+fn sbi_put(c: u8) { crate::arch::sbi::console_putchar(c); }
+fn sbi_puts(s: &str) { for b in s.bytes() { sbi_put(b); } }
+fn sbi_hex(mut n: u64) {
+    sbi_put(b'0'); sbi_put(b'x');
+    for i in (0..16).rev() {
+        let d = ((n >> (i*4)) & 0xf) as u8;
+        sbi_put(if d < 10 { b'0' + d } else { b'a' + d - 10 });
+    }
+}
+fn sbi_dec(mut n: i32) {
+    if n < 0 { sbi_put(b'-'); n = -n; }
+    if n == 0 { sbi_put(b'0'); return; }
+    let mut buf = [0u8; 10]; let mut i = 10;
+    let mut u = n as u32;
+    while u > 0 { i -= 1; buf[i] = b'0' + (u % 10) as u8; u /= 10; }
+    for b in &buf[i..] { sbi_put(*b); }
+}
+
 /// 挂起当前任务，切换到下一个就绪任务
 pub fn suspend_current_and_run_next() {
     let current = {
@@ -74,6 +92,7 @@ pub fn suspend_current_and_run_next() {
     };
 
     if let Some(task) = current {
+        let cur_pid = task.pid.0;
         let mut inner = task.inner_exclusive_access();
         inner.state = TaskState::Ready;
         let current_cx = &mut inner.task_cx as *mut TaskContext;
@@ -92,12 +111,19 @@ pub fn suspend_current_and_run_next() {
             let next_ra = next_inner.task_cx.ra;
             drop(next_inner);
 
-            log::error!("switch: -> pid={} sp={:#x} ra={:#x}", next_pid, next_sp, next_ra);
+            // 用 SBI 直接输出，避免 UART Mutex 死锁
+            sbi_puts("sw:");
+            sbi_dec(cur_pid); sbi_puts("->"); sbi_dec(next_pid);
+            sbi_puts(" ra="); sbi_hex(next_ra as u64);
+            sbi_puts("\n");
+
             *CURRENT_TASK.lock() = Some(next_task);
 
             unsafe {
                 __switch(current_cx, next_cx);
             }
+        } else {
+            sbi_puts("sw:"); sbi_dec(cur_pid); sbi_puts("->NONE\n");
         }
     }
 }
