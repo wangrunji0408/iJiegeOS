@@ -117,11 +117,13 @@ pub fn sys_epoll_ctl(epfd: usize, op: i32, fd: usize, event: *const u8) -> i64 {
         match op {
             1 => {  // EPOLL_CTL_ADD
                 if let Some(evt) = evt {
-                    log::warn!("epoll_ctl ADD: epfd={} fd={} events={:#x} data={:#x}", epfd, fd, evt.events, evt.data);
+                    let events = unsafe { core::ptr::addr_of!(evt.events).read_unaligned() };
+                    let data = unsafe { core::ptr::addr_of!(evt.data).read_unaligned() };
+                    log::warn!("epoll_ctl ADD: epfd={} fd={} events={:#x} data={:#x}", epfd, fd, events, data);
                     instance.entries.insert(fd, EpollEntry {
                         fd,
-                        events: evt.events,
-                        data: evt.data,
+                        events,
+                        data,
                     });
                 }
             }
@@ -132,9 +134,11 @@ pub fn sys_epoll_ctl(epfd: usize, op: i32, fd: usize, event: *const u8) -> i64 {
             3 => {  // EPOLL_CTL_MOD
                 if let Some(entry) = instance.entries.get_mut(&fd) {
                     if let Some(evt) = evt {
-                        log::warn!("epoll_ctl MOD: epfd={} fd={} events={:#x} data={:#x}", epfd, fd, evt.events, evt.data);
-                        entry.events = evt.events;
-                        entry.data = evt.data;
+                        let events = unsafe { core::ptr::addr_of!(evt.events).read_unaligned() };
+                        let data = unsafe { core::ptr::addr_of!(evt.data).read_unaligned() };
+                        log::warn!("epoll_ctl MOD: epfd={} fd={} events={:#x} data={:#x}", epfd, fd, events, data);
+                        entry.events = events;
+                        entry.data = data;
                     }
                 }
             }
