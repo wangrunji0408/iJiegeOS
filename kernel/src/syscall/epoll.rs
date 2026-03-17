@@ -117,6 +117,7 @@ pub fn sys_epoll_ctl(epfd: usize, op: i32, fd: usize, event: *const u8) -> i64 {
         match op {
             1 => {  // EPOLL_CTL_ADD
                 if let Some(evt) = evt {
+                    log::warn!("epoll_ctl ADD: epfd={} fd={} events={:#x} data={:#x}", epfd, fd, evt.events, evt.data);
                     instance.entries.insert(fd, EpollEntry {
                         fd,
                         events: evt.events,
@@ -125,11 +126,13 @@ pub fn sys_epoll_ctl(epfd: usize, op: i32, fd: usize, event: *const u8) -> i64 {
                 }
             }
             2 => {  // EPOLL_CTL_DEL
+                log::warn!("epoll_ctl DEL: epfd={} fd={}", epfd, fd);
                 instance.entries.remove(&fd);
             }
             3 => {  // EPOLL_CTL_MOD
                 if let Some(entry) = instance.entries.get_mut(&fd) {
                     if let Some(evt) = evt {
+                        log::warn!("epoll_ctl MOD: epfd={} fd={} events={:#x} data={:#x}", epfd, fd, evt.events, evt.data);
                         entry.events = evt.events;
                         entry.data = evt.data;
                     }
