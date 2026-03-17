@@ -98,12 +98,11 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
             let args = ctx.syscall_args();
             log::debug!("syscall: id={}, args={:?}", syscall_id, args);
             let ret = crate::syscall::syscall(syscall_id, args, ctx);
-            // 记录所有进程的关键 syscall（排除极高频调用）
+            // 仅记录 pid>1 的进程的所有非频繁 syscall（用于调试 worker 进程）
             {
                 let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(0);
-                // 只排除 clock_gettime 和 fcntl
-                let is_frequent = matches!(syscall_id, 96 | 113 | 114 | 25);
-                if !is_frequent {
+                let is_frequent = matches!(syscall_id, 96 | 113 | 114 | 25 | 135 | 134 | 222 | 214 | 215 | 226 | 133);
+                if pid > 1 && !is_frequent {
                     log::warn!("[pid={}] sc={} ret={}", pid, syscall_id, ret);
                 }
             }
