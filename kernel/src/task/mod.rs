@@ -117,7 +117,8 @@ pub fn handle_signals() {
         for sig in signals {
             match sig {
                 Signal::SIGSEGV | Signal::SIGKILL | Signal::SIGABRT => {
-                    log::warn!("Process killed by signal {:?}", sig);
+                    log::error!("Process killed by signal {:?} sepc={:#x}", sig,
+                        crate::arch::trap::TrapContext::get_current_sepc());
                     drop(task.inner_exclusive_access().pending_signals.drain(..));
                     exit_current_and_run_next(-(sig as i32) as usize);
                     return;
