@@ -102,12 +102,7 @@ fn fork_task(parent: &Arc<Task>, flags: usize, child_sp: usize, ptid: usize, cti
     let parent_inner = parent.inner_exclusive_access();
     let mut memory_set = crate::mm::MemorySet::fork_from(&parent_inner.memory_set);
 
-    // 分配 TrapContext
-    let trap_cx_ppn = memory_set.translate(
-        crate::mm::VirtAddr::from(0).floor()
-    );
-
-    // 实际上 TrapContext 在内核栈上，不需要 ppn 映射
+    // TrapContext 在内核栈上，不需要 ppn 映射
     // 在内核栈上保留一个 TrapContext 空间
     let trap_cx_addr = kernel_sp - core::mem::size_of::<TrapContext>();
     let trap_cx = unsafe { &mut *(trap_cx_addr as *mut TrapContext) };
