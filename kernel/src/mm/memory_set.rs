@@ -385,7 +385,10 @@ impl MemorySet {
                         file.read_at(file_off as u64, dst);
                     }
 
-                    if self.page_table.translate(vpn).map(|e| e.is_valid()).unwrap_or(false) {
+                    let already_mapped = self.page_table.translate(vpn).map(|e| e.is_valid()).unwrap_or(false);
+                    log::error!("cow_fault: addr={:#x} vpn={:#x} ppn={:#x} flags={:?} already={} prot={}",
+                        addr, vpn.0, ppn.0, flags, already_mapped, prot);
+                    if already_mapped {
                         self.page_table.set_flags(vpn, flags);
                     } else {
                         self.page_table.map(vpn, ppn, flags);
@@ -396,6 +399,7 @@ impl MemorySet {
                 return false;
             }
         }
+        log::error!("cow_fault: addr={:#x} NOT in any mmap_area", addr);
         false
     }
 
