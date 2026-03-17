@@ -239,8 +239,9 @@ pub extern "C" fn sbi_debug_restore(trap_cx: &TrapContext) {
     use core::sync::atomic::{AtomicU64, Ordering};
     static RESTORE_COUNT: AtomicU64 = AtomicU64::new(0);
     let count = RESTORE_COUNT.fetch_add(1, Ordering::Relaxed);
-    if count < 30 {
-        let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(9999);
+    let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(9999);
+    // 总是打印 pid=2 的前100次，或者总计前200次
+    if count < 200 || pid == 2 {
         // 使用 SBI 直接输出，避免 Mutex 死锁
         fn putchar(c: u8) { crate::arch::sbi::console_putchar(c); }
         fn print_str(s: &str) { for b in s.bytes() { putchar(b); } }
