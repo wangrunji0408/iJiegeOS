@@ -525,6 +525,23 @@ pub fn syscall(id: usize, args: [usize; 6], ctx: &mut TrapContext) -> i64 {
         nr::SECCOMP => ENOSYS,
         nr::CLOSE_RANGE => file::sys_close_range(args[0] as u32, args[1] as u32, args[2] as i32),
 
+        // Linux AIO (io_setup/io_submit/io_getevents/io_destroy/io_cancel)
+        // nginx uses these; return EAGAIN/success to prevent fatal error
+        nr::IO_SETUP => {
+            // io_setup(nr_events, ctx_idp) - 模拟成功，写入一个非零的 ctx
+            // ctx_idp 是指向 io_context_t 的指针
+            let ctx_idp = args[1];
+            if ctx_idp != 0 {
+                let tok = crate::task::current_user_token();
+                *crate::mm::translated_refmut(tok, ctx_idp as *mut usize) = 0x1234abcd;  // fake ctx
+            }
+            0
+        }
+        nr::IO_DESTROY => 0,  // io_destroy(ctx) - 成功
+        nr::IO_SUBMIT => 0,   // io_submit(ctx, nr, iocbpp) - 返回 0 (没有提交)
+        nr::IO_CANCEL => errno::EINVAL,  // io_cancel - 不支持
+        nr::IO_GETEVENTS => 0,  // io_getevents - 返回 0 (没有事件)
+
         _ => {
             log::warn!("Unknown syscall: {} args={:?}", id, &args[..3]);
             ENOSYS
