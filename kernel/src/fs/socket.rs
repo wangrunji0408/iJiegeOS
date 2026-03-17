@@ -75,7 +75,12 @@ impl FileDescriptor for Socket {
 
     fn can_read(&self) -> bool {
         let inner = self.inner.lock();
-        // 已连接的 socket：有数据可读
+        // 已连接的 socket（有 smoltcp handle）：检查 smoltcp 是否有数据
+        if let Some(raw_handle) = inner.handle {
+            let handle: smoltcp::iface::SocketHandle = unsafe { core::mem::transmute(raw_handle) };
+            drop(inner);
+            return crate::net::tcp_can_recv(handle);
+        }
         // 监听 socket：有待接受的连接
         if inner.listening {
             let port = inner.local_addr.as_ref().map(|a| a.port).unwrap_or(0);
