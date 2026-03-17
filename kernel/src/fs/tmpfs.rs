@@ -472,6 +472,7 @@ impl FileDescriptor for TmpFile {
 /// TmpFs 目录描述符
 pub struct TmpDir {
     path: String,
+    ino: u64,
     fs_ptr: Arc<usize>,
     offset: Mutex<usize>,
 }
@@ -485,6 +486,8 @@ impl FileDescriptor for TmpDir {
     fn stat(&self) -> FileStat {
         let now = crate::timer::get_time_ms() as i64 / 1000;
         FileStat {
+            st_dev: 1,
+            st_ino: self.ino,
             st_mode: super::inode::InodeType::Directory.mode_bits() | 0o755,
             st_nlink: 2,
             st_blksize: 4096,
