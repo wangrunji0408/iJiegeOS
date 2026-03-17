@@ -127,6 +127,8 @@ fn fork_task(parent: &Arc<Task>, flags: usize, child_sp: usize, ptid: usize, cti
     }
 
     let task_cx = crate::task::context::TaskContext::goto_trap_return(trap_cx_addr);
+    log::error!("[fork] pid={}: trap_cx_addr={:#x} kernel_sp={:#x} sepc={:#x} user_sp={:#x} user_satp={:#x}",
+        pid.0, trap_cx_addr, kernel_sp, trap_cx.sepc, trap_cx.get_sp(), trap_cx.user_satp);
 
     // 复制文件描述符
     let fd_table = parent_inner.fd_table.clone();
