@@ -176,6 +176,53 @@ impl MemorySet {
         }
     }
 
+    /// 创建用户地址空间（包含内核恒等映射以支持陷阱处理）
+    pub fn new_user_bare() -> Self {
+        let mut ms = Self::new_bare();
+        // 在用户页表中映射内核区域（恒等映射）
+        // 这是必要的，因为 __alltraps 运行在内核地址，但 stvec 保存的是内核地址
+        // 用户页表中没有内核映射的话，陷阱时无法访问 __alltraps 代码
+        extern "C" {
+            fn stext();
+            fn ekernel();
+        }
+        // 映射整个内核到用户页表（恒等映射，只读/执行）
+        // 注意：这会共享物理帧，不需要额外分配
+        let kernel_start: usize = 0x80000000;  // 从物理内存起始
+        let kernel_end: usize = super::MEMORY_END;  // 到内存末尾
+
+        // 使用恒等映射，不需要额外分配物理帧
+        // 简化：只映射几个关键区域
+        // 内核代码 (text)
+        ms.push(MapArea::new(
+            (stext as usize).into(),
+            (ekernel as usize).into(),
+            MapType::Identical,
+            MapPermission::R | MapPermission::X,
+            "kernel_text_in_user",
+        ), None);
+
+        // 剩余物理内存（包括内核堆和栈）
+        ms.push(MapArea::new(
+            (ekernel as usize).into(),
+            super::MEMORY_END.into(),
+            MapType::Identical,
+            MapPermission::R | MapPermission::W,
+            "kernel_data_in_user",
+        ), None);
+
+        // UART 和其他 MMIO
+        ms.push(MapArea::new(
+            0x10000000usize.into(),
+            0x10009000usize.into(),
+            MapType::Identical,
+            MapPermission::R | MapPermission::W,
+            "mmio_in_user",
+        ), None);
+
+        ms
+    }
+
     pub fn token(&self) -> usize {
         self.page_table.token()
     }
