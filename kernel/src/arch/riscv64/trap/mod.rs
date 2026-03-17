@@ -107,11 +107,8 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
                     let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(0);
                     // 只记录 worker 进程（pid>1）的非频繁 syscall
                     // pid=2(worker) 只记录非频繁调用；pid=1 不记录
-                    // 只记录 pid=2 worker 的 epoll_ctl, accept, getsockopt, epoll_pwait
-                    let interesting = matches!(syscall_id, 234 | 45 | 22 | 21 | 199);
-                    if pid == 2 && interesting {
-                        log::warn!("[2]sc{}({:#x})={}", syscall_id, args[0], ret);
-                    }
+                    // 不记录任何 worker syscall，减少 UART 占用
+                    let _ = pid;
                 }
             }
             if syscall_id == 222 || syscall_id == 214 || syscall_id == 226 {
