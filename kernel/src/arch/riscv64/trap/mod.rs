@@ -98,19 +98,13 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
             let args = ctx.syscall_args();
             log::debug!("syscall: id={}, args={:?}", syscall_id, args);
             let ret = crate::syscall::syscall(syscall_id, args, ctx);
-            // 记录 syscall 调用
+            // 记录 syscall 调用（仅最关键的）
             {
                 use core::sync::atomic::{AtomicBool, Ordering};
                 static FORK_HAPPENED: AtomicBool = AtomicBool::new(false);
                 if syscall_id == 220 { FORK_HAPPENED.store(true, Ordering::Relaxed); }
                 let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(0);
-                if !FORK_HAPPENED.load(Ordering::Relaxed) {
-                    // fork 之前：记录所有 syscall（排除只有 write 到 stdout/stderr）
-                    let noisy = syscall_id == 64 && (args[0] == 1 || args[0] == 2);
-                    if !noisy {
-                        log::warn!("[{}]sc{}({:#x},{:#x})={}", pid, syscall_id, args[0], args[1], ret);
-                    }
-                } else {
+                if FORK_HAPPENED.load(Ordering::Relaxed) {
                     // fork 之后：只记录 pid=2 的 accept4
                     let interesting = matches!(syscall_id, 242 | 202);
                     if pid == 2 && interesting {
