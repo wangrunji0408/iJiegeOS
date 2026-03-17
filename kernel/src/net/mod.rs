@@ -147,11 +147,16 @@ fn smoltcp_now() -> Instant {
 /// 轮询网络接口：读取 VirtIO RX → smoltcp → 写出 VirtIO TX
 pub fn poll() {
     // 从真实 VirtIO 设备接收数据包，推入 smoltcp device rx_buf
+    let mut rx_count = 0;
     while let Some(pkt) = crate::drivers::net_receive_packet() {
+        rx_count += 1;
         let mut guard = NET_IFACE.lock();
         if let Some(ref mut state) = guard.as_mut() {
             state.device.push_rx(pkt);
         }
+    }
+    if rx_count > 0 {
+        log::debug!("net::poll: received {} packets from VirtIO", rx_count);
     }
 
     // 运行 smoltcp 网络栈
