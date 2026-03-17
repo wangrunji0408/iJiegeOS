@@ -594,6 +594,10 @@ impl MemorySet {
                 MapType::Framed => {
                     // 有数据的页：复制物理帧
                     for vpn in area.vpn_range.clone().into_iter() {
+                        // 跳过已映射的 vpn（防止重叠区域冲突）
+                        if memory_set.page_table.translate(vpn).map(|e| e.is_valid()).unwrap_or(false) {
+                            continue;
+                        }
                         if let Some(pte) = user_space.page_table.translate(vpn) {
                             if pte.is_valid() {
                                 let src_ppn = pte.ppn();
@@ -609,6 +613,10 @@ impl MemorySet {
                 MapType::Lazy => {
                     // Lazy 区域：只复制已经实际映射的页
                     for vpn in area.vpn_range.clone().into_iter() {
+                        // 跳过已映射的 vpn
+                        if memory_set.page_table.translate(vpn).map(|e| e.is_valid()).unwrap_or(false) {
+                            continue;
+                        }
                         if let Some(pte) = user_space.page_table.translate(vpn) {
                             if pte.is_valid() {
                                 let src_ppn = pte.ppn();
