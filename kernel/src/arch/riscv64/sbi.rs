@@ -66,3 +66,11 @@ pub fn shutdown() -> ! {
     sbi_call::sbi_call(sbi_call::EXT_SRST, 0, 0, 0, 0);
     unreachable!()
 }
+
+/// 获取 strampoline 函数的物理地址
+pub fn strampoline_addr() -> usize {
+    extern "C" {
+        fn strampoline();
+    }
+    strampoline as usize
+}

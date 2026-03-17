@@ -7,27 +7,44 @@ use riscv::register::{
 
 global_asm!(include_str!("trap.asm"));
 
+/// TRAP_CONTEXT_BASE: 用户虚拟地址空间中 TrapContext 的固定位置
+/// 位于 TRAMPOLINE 下面一页
+pub const TRAP_CONTEXT_BASE: usize = 0x3fffff000;  // 接近用户地址空间顶部
+
+/// TrapContext: 保存陷阱时的所有寄存器状态
 #[repr(C)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct TrapContext {
     /// 通用寄存器 x0-x31
     pub x: [usize; 32],
-    /// 特权级寄存器
+    /// sstatus
     pub sstatus: usize,
+    /// sepc (程序计数器)
     pub sepc: usize,
-    /// 内核栈指针（保存在sscratch中）
+    /// 内核栈指针
     pub kernel_sp: usize,
-    /// 内核satp（页表基址）
+    /// 内核页表 token (satp)
     pub kernel_satp: usize,
-    /// trap_handler地址
+    /// trap_handler 函数地址
     pub trap_handler: usize,
+    /// 用户页表 token (satp) - 放在 kernel_satp 位置，但作用不同
+    /// 注意：我们用 kernel_satp 字段存储用户页表，restore时切换用
+    pub user_satp: usize,
 }
 
 impl TrapContext {
-    pub fn new(entry: usize, sp: usize, kernel_satp: usize, kernel_sp: usize, trap_handler: usize) -> Self {
+    pub fn new(
+        entry: usize,
+        user_sp: usize,
+        kernel_satp: usize,
+        kernel_sp: usize,
+        trap_handler: usize,
+        user_satp: usize,
+    ) -> Self {
         let mut sstatus = sstatus::read();
-        // 设置 SPP 为 User，即返回用户模式
+        // SPP = User，表示从 S 模式返回到 U 模式
         sstatus.set_spp(sstatus::SPP::User);
+        // 允许用户态浮点运算
         let mut ctx = Self {
             x: [0; 32],
             sstatus: sstatus.bits(),
@@ -35,9 +52,9 @@ impl TrapContext {
             kernel_sp,
             kernel_satp,
             trap_handler,
+            user_satp,
         };
-        // sp = x2
-        ctx.x[2] = sp;
+        ctx.x[2] = user_sp;  // sp
         ctx
     }
 
@@ -45,31 +62,28 @@ impl TrapContext {
         self.x[2] = sp;
     }
 
-    pub fn set_arg0(&mut self, val: usize) {
+    pub fn get_sp(&self) -> usize {
+        self.x[2]
+    }
+
+    /// 获取系统调用号 (a7 = x17)
+    pub fn syscall_id(&self) -> usize {
+        self.x[17]
+    }
+
+    /// 获取系统调用参数
+    pub fn syscall_args(&self) -> [usize; 6] {
+        [self.x[10], self.x[11], self.x[12], self.x[13], self.x[14], self.x[15]]
+    }
+
+    /// 设置系统调用返回值 (a0 = x10)
+    pub fn set_return_value(&mut self, val: usize) {
         self.x[10] = val;
     }
 
-    pub fn set_arg1(&mut self, val: usize) {
-        self.x[11] = val;
-    }
-
-    pub fn get_syscall_id(&self) -> usize {
-        self.x[17]  // a7
-    }
-
-    pub fn get_syscall_args(&self) -> [usize; 6] {
-        [
-            self.x[10], // a0
-            self.x[11], // a1
-            self.x[12], // a2
-            self.x[13], // a3
-            self.x[14], // a4
-            self.x[15], // a5
-        ]
-    }
-
-    pub fn set_return_value(&mut self, val: usize) {
-        self.x[10] = val;  // a0
+    /// 设置 a0-a5
+    pub fn set_arg(&mut self, i: usize, val: usize) {
+        self.x[10 + i] = val;
     }
 }
 
@@ -80,64 +94,125 @@ pub fn init() {
     unsafe {
         sscratch::write(0);
         stvec::write(__alltraps as usize, TrapMode::Direct);
-        // 开启定时器中断
+        // 开启 S 态定时器中断
         sie::set_stimer();
-        // 开启外部中断
+        // 开启 S 态外部中断（PLIC）
         sie::set_sext();
     }
-    log::info!("trap: initialized");
+    log::info!("trap: initialized, stvec={:#x}", __alltraps as usize);
 }
 
+/// 进入用户态前设置
+pub fn enable_user_trap() {
+    extern "C" {
+        fn __alltraps();
+    }
+    // Trampoline 在虚拟地址中的位置
+    let trampoline_addr = crate::mm::TRAMPOLINE;
+    let alltraps_offset = __alltraps as usize - crate::arch::sbi::strampoline_addr();
+    let stvec_addr = trampoline_addr + alltraps_offset;
+    unsafe {
+        stvec::write(stvec_addr, TrapMode::Direct);
+    }
+}
+
+/// 在内核态设置 stvec 指向内核陷阱处理
+pub fn set_kernel_trap() {
+    extern "C" {
+        fn __alltraps();
+    }
+    unsafe {
+        stvec::write(kernel_trap_handler as usize, TrapMode::Direct);
+    }
+}
+
+/// 内核态陷阱处理（简化版，主要处理中断）
 #[no_mangle]
-pub fn trap_handler(ctx: &mut TrapContext) -> &mut TrapContext {
+pub extern "C" fn kernel_trap_handler() -> ! {
+    let scause = scause::read();
+    let stval = stval::read();
+    match scause.cause() {
+        Trap::Interrupt(Interrupt::SupervisorTimer) => {
+            crate::timer::handle_timer_interrupt();
+        }
+        Trap::Interrupt(Interrupt::SupervisorExternal) => {
+            crate::drivers::handle_external_interrupt();
+        }
+        _ => {
+            panic!(
+                "kernel trap: cause={:?}, stval={:#x}",
+                scause.cause(),
+                stval
+            );
+        }
+    }
+    loop {}
+}
+
+/// 用户陷阱处理入口（从汇编调用）
+#[no_mangle]
+pub extern "C" fn trap_handler_entry() -> *mut TrapContext {
+    // 设置内核态陷阱处理器
+    set_kernel_trap();
+
+    // 获取当前进程的 TrapContext
+    let ctx = crate::task::current_trap_cx();
+    handle_trap(ctx);
+    ctx
+}
+
+fn handle_trap(ctx: &mut TrapContext) {
     let scause = scause::read();
     let stval = stval::read();
 
     match scause.cause() {
         Trap::Exception(Exception::UserEnvCall) => {
-            // 系统调用
-            ctx.sepc += 4;  // 跳过ecall指令
-            let syscall_id = ctx.get_syscall_id();
-            let args = ctx.get_syscall_args();
+            // 系统调用：跳过 ecall 指令
+            ctx.sepc += 4;
+            let syscall_id = ctx.syscall_id();
+            let args = ctx.syscall_args();
             let ret = crate::syscall::syscall(syscall_id, args);
             ctx.set_return_value(ret as usize);
         }
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
-            // 定时器中断
             crate::timer::handle_timer_interrupt();
+            // 时间片到，调度
+            crate::task::suspend_current_and_run_next();
         }
         Trap::Interrupt(Interrupt::SupervisorExternal) => {
-            // 外部中断（PLIC）
             crate::drivers::handle_external_interrupt();
         }
         Trap::Exception(Exception::StoreFault)
-        | Trap::Exception(Exception::StorePageFault)
-        | Trap::Exception(Exception::InstructionFault)
-        | Trap::Exception(Exception::InstructionPageFault)
-        | Trap::Exception(Exception::LoadFault)
-        | Trap::Exception(Exception::LoadPageFault) => {
-            // 页面错误
+        | Trap::Exception(Exception::StorePageFault) => {
             let handled = crate::mm::handle_page_fault(stval, scause.bits());
             if !handled {
-                log::error!(
-                    "Unhandled page fault: cause={:?}, addr={:#x}, sepc={:#x}",
-                    scause.cause(),
-                    stval,
-                    ctx.sepc
-                );
-                // 发送SIGSEGV给当前进程
-                crate::task::current_add_signal(crate::task::Signal::SIGSEGV);
+                log::warn!("Store page fault at {:#x}, sepc={:#x}", stval, ctx.sepc);
+                crate::task::current_add_signal(crate::signal::Signal::SIGSEGV);
             }
+        }
+        Trap::Exception(Exception::LoadFault)
+        | Trap::Exception(Exception::LoadPageFault) => {
+            let handled = crate::mm::handle_page_fault(stval, scause.bits());
+            if !handled {
+                log::warn!("Load page fault at {:#x}, sepc={:#x}", stval, ctx.sepc);
+                crate::task::current_add_signal(crate::signal::Signal::SIGSEGV);
+            }
+        }
+        Trap::Exception(Exception::InstructionFault)
+        | Trap::Exception(Exception::InstructionPageFault) => {
+            log::warn!("Instruction fault at {:#x}, sepc={:#x}", stval, ctx.sepc);
+            crate::task::current_add_signal(crate::signal::Signal::SIGSEGV);
         }
         _ => {
             log::warn!(
-                "Unsupported trap: cause={:?}, stval={:#x}, sepc={:#x}",
+                "Unhandled trap: {:?}, stval={:#x}, sepc={:#x}",
                 scause.cause(),
                 stval,
-                ctx.sepc
+                ctx.sepc,
             );
         }
     }
 
-    ctx
+    // 处理信号
+    crate::task::handle_signals();
 }
