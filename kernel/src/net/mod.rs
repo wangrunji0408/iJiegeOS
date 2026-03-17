@@ -282,7 +282,11 @@ pub fn tcp_can_recv(handle: SocketHandle) -> bool {
     let guard = NET_IFACE.lock();
     if let Some(ref state) = guard.as_ref() {
         let tcp_sock = state.sockets.get::<tcp::Socket>(handle);
-        tcp_sock.can_recv()
+        let can = tcp_sock.can_recv();
+        if can {
+            log::warn!("tcp_can_recv: handle has data!");
+        }
+        can
     } else {
         false
     }
