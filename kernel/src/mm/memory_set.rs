@@ -180,42 +180,21 @@ impl MemorySet {
     pub fn new_user_bare() -> Self {
         let mut ms = Self::new_bare();
         // 在用户页表中映射内核区域（恒等映射）
-        // 这是必要的，因为 __alltraps 运行在内核地址，但 stvec 保存的是内核地址
-        // 用户页表中没有内核映射的话，陷阱时无法访问 __alltraps 代码
+        // trap 发生时 CPU 还在用户页表下跳到 stvec，需要能访问内核代码和数据
+        // 内核 satp=0 时，所有操作都在用户页表下进行
         extern "C" {
             fn stext();
-            fn etext();
-            fn srodata();
-            fn erodata();
-            fn sdata();
             fn ekernel();
         }
 
-        // 内核代码段 (text) - 执行权限
+        // 映射整个内核（text + rodata + data + bss）为 R|W|X
+        // 因为 trap_handler 需要在用户页表下读写内核数据
         ms.push(MapArea::new(
             (stext as usize).into(),
-            (etext as usize).into(),
-            MapType::Identical,
-            MapPermission::R | MapPermission::X,
-            "kernel_text_in_user",
-        ), None);
-
-        // 内核只读数据 (rodata)
-        ms.push(MapArea::new(
-            (srodata as usize).into(),
-            (erodata as usize).into(),
-            MapType::Identical,
-            MapPermission::R,
-            "kernel_rodata_in_user",
-        ), None);
-
-        // 内核数据/bss/堆（包含 HEAP_SPACE, KernelStack 等）- 读写权限
-        ms.push(MapArea::new(
-            (sdata as usize).into(),
             (ekernel as usize).into(),
             MapType::Identical,
-            MapPermission::R | MapPermission::W,
-            "kernel_data_in_user",
+            MapPermission::R | MapPermission::W | MapPermission::X,
+            "kernel_in_user",
         ), None);
 
         // 剩余物理内存（页帧分配器管理的内存，用于 TrapContext 等分配的帧）
