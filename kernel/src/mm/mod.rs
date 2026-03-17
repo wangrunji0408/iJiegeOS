@@ -28,7 +28,10 @@ pub fn init() {
 pub fn handle_page_fault(addr: usize, cause: usize) -> bool {
     if let Some(task) = crate::task::current_task() {
         let mut inner = task.inner_exclusive_access();
-        inner.memory_set.handle_cow_fault(addr)
+        log::warn!("handle_page_fault: addr={:#x}, checking mmap areas...", addr);
+        let result = inner.memory_set.handle_cow_fault(addr);
+        log::warn!("handle_page_fault: addr={:#x}, result={}", addr, result);
+        result
     } else {
         false
     }
