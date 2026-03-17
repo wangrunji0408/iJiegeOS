@@ -128,10 +128,13 @@ pub fn handle_virtio_interrupt(irq: usize) {
     let base = VIRTIO_MMIO_BASE + device_idx * VIRTIO_MMIO_SIZE;
 
     // 读取设备类型来决定如何处理
-    let header = unsafe { &mut *(base as *mut VirtIOHeader) };
-    if header.magic_value() != 0x74726976 { return; }
+    let header = core::ptr::NonNull::new(base as *mut VirtIOHeader).unwrap();
+    let transport = match unsafe { MmioTransport::new(header) } {
+        Ok(t) => t,
+        Err(_) => return,
+    };
 
-    match header.device_type() {
+    match transport.device_type() {
         DeviceType::Block => {
             // 块设备中断（完成一次 I/O）
         }
