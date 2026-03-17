@@ -146,16 +146,23 @@ pub fn sys_epoll_pwait(epfd: usize, events: *mut u8, maxevents: i32, timeout: i3
     let task = current_task().unwrap();
     let inner = task.inner_exclusive_access();
 
+    // 获取 epoll 实例 id
+    let epoll_id = match inner.get_fd(epfd).and_then(|f| f.epoll_id()) {
+        Some(id) => id,
+        None => return EBADF,
+    };
+
     // 轮询所有被监视的 fd
     let mut ready_events: Vec<EpollEvent> = Vec::new();
-    let mut store = EPOLL_STORE.lock();
 
-    // 轮询网络
-    drop(store);
+    // 先轮询网络
+    drop(inner);
     crate::net::poll();
-    store = EPOLL_STORE.lock();
+    let task = current_task().unwrap();
+    let inner = task.inner_exclusive_access();
+    let store = EPOLL_STORE.lock();
 
-    for (_, instance) in store.instances.iter() {
+    if let Some(instance) = store.instances.get(&epoll_id) {
         for (_, entry) in instance.entries.iter() {
             if let Some(file) = inner.get_fd(entry.fd) {
                 let mut ready = 0u32;
@@ -189,8 +196,8 @@ pub fn sys_epoll_pwait(epfd: usize, events: *mut u8, maxevents: i32, timeout: i3
             // 重新检查
             let task = current_task().unwrap();
             let inner = task.inner_exclusive_access();
-            let mut store = EPOLL_STORE.lock();
-            for (_, instance) in store.instances.iter() {
+            let store = EPOLL_STORE.lock();
+            if let Some(instance) = store.instances.get(&epoll_id) {
                 for (_, entry) in instance.entries.iter() {
                     if let Some(file) = inner.get_fd(entry.fd) {
                         let mut ready = 0u32;
