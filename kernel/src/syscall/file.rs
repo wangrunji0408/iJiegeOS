@@ -323,7 +323,7 @@ pub fn sys_fcntl(fd: usize, cmd: i32, arg: usize) -> i64 {
         4  => { file.set_flags(arg as i32); 0 },  // F_SETFL
         // F_GETLK, F_SETLK, F_SETLKW
         5 | 6 | 7 => 0,
-        _ => file.fcntl(cmd, arg),
+        _ => file.fcntl(cmd, arg) as i64,
     }
 }
 
@@ -335,7 +335,7 @@ pub fn sys_ioctl(fd: usize, request: u64, arg: usize) -> i64 {
         None => return EBADF,
     };
     drop(inner);
-    file.ioctl(request, arg)
+    file.ioctl(request, arg) as i64
 }
 
 pub fn sys_getdents64(fd: usize, buf: *mut u8, len: usize) -> i64 {
@@ -349,7 +349,7 @@ pub fn sys_getdents64(fd: usize, buf: *mut u8, len: usize) -> i64 {
 
     let mut kernel_buf = alloc::vec![0u8; len];
     let n = file.getdents(&mut kernel_buf);
-    if n <= 0 { return n; }
+    if n <= 0 { return n as i64; }
 
     let user_bufs = translated_byte_buffer(token(), buf, n as usize);
     let mut offset = 0;
@@ -357,7 +357,7 @@ pub fn sys_getdents64(fd: usize, buf: *mut u8, len: usize) -> i64 {
         user_buf.copy_from_slice(&kernel_buf[offset..offset + user_buf.len()]);
         offset += user_buf.len();
     }
-    n
+    n as i64
 }
 
 pub fn sys_readlinkat(dirfd: i32, path: *const u8, buf: *mut u8, size: usize) -> i64 {
@@ -436,7 +436,7 @@ pub fn sys_ftruncate(fd: usize, size: i64) -> i64 {
         None => return EBADF,
     };
     drop(inner);
-    file.truncate(size as u64)
+    file.truncate(size as u64) as i64
 }
 
 pub fn sys_flock(fd: usize, how: i32) -> i64 {
@@ -447,7 +447,7 @@ pub fn sys_flock(fd: usize, how: i32) -> i64 {
         None => return EBADF,
     };
     drop(inner);
-    file.flock(how)
+    file.flock(how) as i64
 }
 
 pub fn sys_sendfile(out_fd: usize, in_fd: usize, offset: *mut i64, count: usize) -> i64 {
