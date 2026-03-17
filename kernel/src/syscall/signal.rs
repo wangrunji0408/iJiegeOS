@@ -48,7 +48,9 @@ pub fn sys_tkill(pid: i32, tid: i32, sig: i32) -> i64 {
 }
 
 pub fn sys_rt_sigsuspend(set: *const u64, sigsetsize: usize) -> i64 {
-    // 简化：让出 CPU
+    let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(-1);
+    log::warn!("[pid={}] sigsuspend: yielding CPU", pid);
     crate::task::suspend_current_and_run_next();
+    log::warn!("[pid={}] sigsuspend: returning EINTR", pid);
     EINTR
 }

@@ -291,6 +291,7 @@ pub fn sys_wait4(pid: i32, wstatus: usize, options: i32) -> i64 {
     // 简化的 wait4
     // 查找子进程
     let current = current_task().unwrap();
+    let my_pid = current.pid.0;
 
     loop {
         let inner = current.inner_exclusive_access();
@@ -303,6 +304,7 @@ pub fn sys_wait4(pid: i32, wstatus: usize, options: i32) -> i64 {
                 let child_pid = child.pid.0;
                 if pid == -1 || pid == child_pid {
                     // 找到退出的子进程
+                    log::warn!("[pid={}] wait4: found zombie child pid={}, code={}", my_pid, child_pid, code);
                     drop(child_inner);
                     // 从子进程列表中移除
                     let mut inner = current.inner_exclusive_access();
@@ -323,6 +325,7 @@ pub fn sys_wait4(pid: i32, wstatus: usize, options: i32) -> i64 {
         // 检查是否有子进程
         let inner = current.inner_exclusive_access();
         if inner.children.is_empty() {
+            log::warn!("[pid={}] wait4: no children, returning ECHILD", my_pid);
             return ECHILD;
         }
         drop(inner);
@@ -333,7 +336,7 @@ pub fn sys_wait4(pid: i32, wstatus: usize, options: i32) -> i64 {
         }
 
         // 让出 CPU 等待
-        drop(current.inner_exclusive_access());
+        log::warn!("[pid={}] wait4: no zombie child, yielding...", my_pid);
         crate::task::suspend_current_and_run_next();
     }
 }
