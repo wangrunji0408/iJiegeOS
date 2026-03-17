@@ -240,7 +240,7 @@ pub fn sys_execve(path: *const u8, argv: *const usize, envp: *const usize, ctx: 
     let trap_cx = unsafe { &mut *(trap_cx_addr as *mut TrapContext) };
     *trap_cx = TrapContext::new(entry, user_sp);
     trap_cx.user_satp = inner.memory_set.token();
-    trap_cx.kernel_satp = riscv::register::satp::read().bits();
+    trap_cx.kernel_satp = 0;  // 内核没有独立页表
     inner.trap_cx_addr = trap_cx_addr;
 
     // 更新调度上下文（使新地址空间生效）
