@@ -144,9 +144,12 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
         }
         Trap::Exception(Exception::InstructionFault)
         | Trap::Exception(Exception::InstructionPageFault) => {
+            log::warn!("IPF: addr={:#x}, sepc={:#x}, handling...", stval, ctx.sepc);
             if !crate::mm::handle_page_fault(stval, scause.bits()) {
                 log::warn!("Instruction fault: addr={:#x}, sepc={:#x}", stval, ctx.sepc);
                 crate::task::current_add_signal(crate::signal::Signal::SIGSEGV);
+            } else {
+                log::warn!("IPF: handled ok, addr={:#x}", stval);
             }
         }
         Trap::Exception(Exception::IllegalInstruction) => {
