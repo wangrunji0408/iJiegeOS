@@ -107,8 +107,12 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
         Trap::Exception(Exception::StoreFault)
         | Trap::Exception(Exception::StorePageFault) => {
             if !crate::mm::handle_page_fault(stval, scause.bits()) {
-                log::warn!("Store fault: addr={:#x}, sepc={:#x}, ra={:#x}, sp={:#x}, a0={:#x}",
-                    stval, ctx.sepc, ctx.x[1], ctx.x[2], ctx.x[10]);
+                log::warn!("Store fault: addr={:#x}, sepc={:#x}, ra={:#x}, sp={:#x}, a0={:#x}, a5={:#x}, s6={:#x}",
+                    stval, ctx.sepc, ctx.x[1], ctx.x[2], ctx.x[10], ctx.x[15], ctx.x[22]);
+                // Print all registers for debugging
+                for i in 0..32 {
+                    log::warn!("  x[{}]={:#x}", i, ctx.x[i]);
+                }
                 crate::task::current_add_signal(crate::signal::Signal::SIGSEGV);
             }
         }
