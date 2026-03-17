@@ -178,10 +178,18 @@ pub fn net_send_packet(data: &[u8]) {
     let mut dev = NET_DEVICE.lock();
     if let Some(ref mut net) = dev.as_mut() {
         if net.can_send() {
+            log::warn!("net_send_packet: sending {} bytes", data.len());
             use virtio_drivers::device::net::TxBuffer;
             let tx = TxBuffer::from(data);
-            let _ = net.send(tx);
+            match net.send(tx) {
+                Ok(_) => log::warn!("net_send_packet: sent ok"),
+                Err(e) => log::warn!("net_send_packet: send error: {:?}", e),
+            }
+        } else {
+            log::warn!("net_send_packet: can't send (queue full?)");
         }
+    } else {
+        log::warn!("net_send_packet: no NET_DEVICE");
     }
 }
 
