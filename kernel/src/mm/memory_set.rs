@@ -430,6 +430,7 @@ impl MemorySet {
             }
         }
         log::error!("cow_fault: addr={:#x} NOT in any mmap_area", addr);
+        false
     }
 
     /// 注册一个懒加载的文件映射区域（不立即读取文件内容）
