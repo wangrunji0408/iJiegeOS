@@ -1,7 +1,7 @@
-use std::env;
 use std::path::PathBuf;
 
 fn main() {
+    println!("cargo::rustc-check-cfg=cfg(has_initrd)");
     // 告诉 cargo 如果 initrd.cpio 改变则重新构建
     let initrd_path = "../initrd.cpio";
     println!("cargo:rerun-if-changed={}", initrd_path);
