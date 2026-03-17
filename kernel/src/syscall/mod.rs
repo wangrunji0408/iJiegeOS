@@ -429,7 +429,8 @@ pub fn syscall(id: usize, args: [usize; 6], ctx: &mut TrapContext) -> i64 {
         nr::GETPGID => process::sys_getpgid(args[0] as i32),
         nr::GETSID => process::sys_getsid(args[0] as i32),
         nr::SETSID => process::sys_setsid(),
-        nr::CLONE => process::sys_clone(args[0], args[1], args[2], args[3], args[4], ctx),
+        // RISC-V clone 参数顺序: flags, newsp, parent_tidptr, tls, child_tidptr
+        nr::CLONE => process::sys_clone(args[0], args[1], args[2], args[4], args[3], ctx),
         nr::EXECVE => process::sys_execve(args[0] as *const u8, args[1] as *const usize, args[2] as *const usize, ctx),
         nr::WAIT4 | nr::WAITID => process::sys_wait4(args[0] as i32, args[1], args[2] as i32),
         nr::EXIT => process::sys_exit(args[0] as i32),
