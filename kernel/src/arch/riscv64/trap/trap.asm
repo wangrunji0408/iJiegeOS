@@ -6,10 +6,11 @@
 # sscratch = 0（内核态时）
 #
 # TrapContext 布局：
-#   x[0..32]: offset 0..256
-#   sstatus:  offset 256
-#   sepc:     offset 264
-#   user_satp: offset 272  (用户进程的页表 satp)
+#   x[0..32]:     offset 0..256
+#   sstatus:      offset 256
+#   sepc:         offset 264
+#   user_satp:    offset 272    (用户进程的页表 satp)
+#   kernel_satp:  offset 280    (内核页表 satp，陷入时切换)
 
     .altmacro
     .macro SAVE_GP n
@@ -31,13 +32,12 @@ __alltraps:
     beqz t0, 1f       # 来自内核态，跳转到内核陷阱处理
 
     # 来自用户态：交换 sp 和 sscratch
-    # 执行后：sp = TrapContext 内核地址, sscratch = 用户 sp
+    # 执行后：sp = TrapContext 内核地址（内核栈）, sscratch = 用户 sp
     csrrw sp, sscratch, sp
 
     # 保存用户寄存器到 TrapContext
-    # x0 不需要保存（始终为 0）
     sd x1, 8(sp)
-    # x2 (sp) 从 sscratch 获取
+    # x2 (sp) 从 sscratch 获取（稍后保存）
     sd x3, 24(sp)
     .set n, 4
     .rept 28
@@ -55,21 +55,25 @@ __alltraps:
     csrr t0, sscratch
     sd t0, 16(sp)    # x2 = 用户 sp
 
-    # 切换到内核页表（satp=0 表示无翻译）
-    # 实际上如果内核不激活页表，这里不需要切换
+    # 切换到内核页表（如果配置了）
+    ld t2, 280(sp)   # kernel_satp
+    beqz t2, .Lno_satp_switch_to_kernel
+    csrw satp, t2
+    sfence.vma zero, zero
+.Lno_satp_switch_to_kernel:
+
     # 设置 sscratch = 0（表示现在在内核态）
     csrw sscratch, zero
 
     # 调用 Rust 陷阱处理函数
-    # sp 指向 TrapContext，作为参数传入
     mv a0, sp
     call trap_handler
 
     j __restore
 
 1:  # 内核态陷阱
-    # 在内核栈上保存寄存器（内核陷阱帧）
-    addi sp, sp, -280  # 为 TrapContext (272字节) 分配空间，并对齐
+    # 在内核栈上保存寄存器
+    addi sp, sp, -288  # 为 TrapContext (288 字节) 分配空间
     sd x1, 8(sp)
     sd x3, 24(sp)
     .set n, 4
@@ -81,7 +85,7 @@ __alltraps:
     csrr t1, sepc
     sd t0, 256(sp)
     sd t1, 264(sp)
-    sd x2, 16(sp)  # 保存原 sp（已修改，这里保存的是调整后的值）
+    sd x2, 16(sp)
 
     mv a0, sp
     call kernel_trap_handler
@@ -98,7 +102,7 @@ __alltraps:
         LOAD_GP %n
         .set n, n+1
     .endr
-    addi sp, sp, 280
+    addi sp, sp, 288
     sret
 
 __restore:
@@ -109,14 +113,15 @@ __restore:
     csrw sepc, t0
     csrw sstatus, t1
 
-    # 加载用户页表 satp 并切换
+    # 切换到用户页表
     ld t2, 272(sp)   # user_satp
-    beqz t2, 2f      # 如果 satp=0，跳过切换（用于测试）
+    beqz t2, .Lno_satp_switch_to_user
     csrw satp, t2    # 切换到用户页表
-    sfence.vma zero, zero  # 刷新 TLB
-2:
+    sfence.vma zero, zero
+.Lno_satp_switch_to_user:
+
     # 设置 sscratch = sp（TrapContext 内核地址）
-    # 下次陷阱时，__alltraps 会与 sscratch 交换，sp 变为 TrapContext 地址
+    # 下次陷阱时，__alltraps 会交换 sp 和 sscratch
     csrw sscratch, sp
 
     # 恢复通用寄存器（除了 sp）
@@ -128,7 +133,7 @@ __restore:
         .set n, n+1
     .endr
 
-    # 恢复用户 sp（最后恢复，因为 sp 指向 TrapContext）
+    # 恢复用户 sp（最后恢复）
     ld sp, 16(sp)
 
     # 返回用户态
