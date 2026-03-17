@@ -194,6 +194,7 @@ impl Task {
         *trap_cx = TrapContext::new(entry_point, user_sp);
         // 设置用户页表 satp
         trap_cx.user_satp = memory_set.token();
+        trap_cx.kernel_satp = riscv::register::satp::read().bits();
         // argc 在 a0，argv 在 a1
         trap_cx.x[10] = argv.len();  // a0 = argc
         trap_cx.x[11] = user_sp;     // a1 = argv（栈顶就是 argv 数组）
