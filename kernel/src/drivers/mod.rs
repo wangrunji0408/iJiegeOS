@@ -6,7 +6,8 @@ use spin::Mutex;
 
 pub fn init(dtb_pa: usize) {
     // 初始化 PLIC（平台级中断控制器）
-    init_plic();
+    // 先跳过 PLIC 初始化进行测试
+    // init_plic();
 
     // 探测并初始化 VirtIO 设备
     virtio::probe_virtio_devices(dtb_pa);
