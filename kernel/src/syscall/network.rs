@@ -284,10 +284,33 @@ pub fn sys_setsockopt(fd: usize, level: i32, optname: i32, optval: *const u8, op
 
 pub fn sys_getsockopt(fd: usize, level: i32, optname: i32, optval: *mut u8, optlen: *mut u32) -> i64 {
     let tok = token();
-    if !optval.is_null() && !optlen.is_null() {
-        *translated_refmut(tok, optval as *mut i32) = 0;
-        *translated_refmut(tok, optlen) = 4u32;
+    if optval.is_null() || optlen.is_null() {
+        return 0;
     }
+
+    // 获取 socket 状态（用于 SO_ACCEPTCONN 等）
+    let task = current_task().unwrap();
+    let inner = task.inner_exclusive_access();
+    let listening = if let Some(file) = inner.get_fd(fd) {
+        file.as_socket().map(|s| s.inner.lock().listening).unwrap_or(false)
+    } else {
+        false
+    };
+    drop(inner);
+
+    let val: i32 = match (level, optname) {
+        (1, 30) => {  // SOL_SOCKET, SO_ACCEPTCONN — is this socket listening?
+            log::warn!("getsockopt: fd={} SO_ACCEPTCONN -> {}", fd, listening as i32);
+            listening as i32
+        }
+        (1, 4) => {  // SOL_SOCKET, SO_ERROR
+            0
+        }
+        _ => 0,
+    };
+
+    *translated_refmut(tok, optval as *mut i32) = val;
+    *translated_refmut(tok, optlen) = 4u32;
     0
 }
 
