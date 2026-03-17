@@ -413,6 +413,20 @@ impl MemorySet {
                     if prot & 1 != 0 { flags |= PTEFlags::R; }
                     if prot & 2 != 0 { flags |= PTEFlags::W; }
                     if prot & 4 != 0 { flags |= PTEFlags::X; }
+
+                    // 如果有文件引用，按需读取该页内容
+                    if let Some(ref file) = area.file {
+                        let page_offset = (vpn.0 << 12) - area.start;
+                        let file_off = area.file_offset + page_offset;
+                        // 直接写入物理帧
+                        let dst: &mut [u8] = unsafe {
+                            let phys_addr: usize = ppn.0 << 12;
+                            core::slice::from_raw_parts_mut(phys_addr as *mut u8, 4096)
+                        };
+                        dst.fill(0);
+                        file.read_at(file_off as u64, dst);
+                    }
+
                     if self.page_table.translate(vpn).map(|e| e.is_valid()).unwrap_or(false) {
                         self.page_table.set_flags(vpn, flags);
                     } else {
@@ -425,6 +439,26 @@ impl MemorySet {
             }
         }
         false
+    }
+
+    /// 注册一个懒加载的文件映射区域（不立即读取文件内容）
+    pub fn mmap_file(&mut self, hint: usize, len: usize, prot: usize, file: alloc::sync::Arc<dyn crate::fs::FileDescriptor>, file_offset: usize) -> usize {
+        let start = if hint == 0 {
+            self.find_free_area(len)
+        } else {
+            hint & !4095
+        };
+        let end = (start + len + 4095) & !4095;
+
+        // 不分配物理内存，只注册虚拟地址范围
+        let area = MmapArea {
+            start, end, prot, flags: 0,
+            data_frames: BTreeMap::new(),
+            file: Some(file),
+            file_offset,
+        };
+        self.mmap_areas.push(area);
+        start
     }
 
     pub fn set_brk(&mut self, new_brk: usize) -> usize {
