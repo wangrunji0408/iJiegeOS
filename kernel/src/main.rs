@@ -2,6 +2,7 @@
 #![no_main]
 #![feature(alloc_error_handler)]
 #![feature(naked_functions)]
+#![feature(asm_const)]
 #![allow(dead_code)]
 #![allow(unused_variables)]
 #![allow(unused_imports)]
@@ -29,54 +30,67 @@ static KERNEL_STARTED: AtomicBool = AtomicBool::new(false);
 
 #[no_mangle]
 pub fn kernel_main(hart_id: usize, dtb_pa: usize) -> ! {
+    // 只让 hart 0 初始化
     if hart_id == 0 {
         console::init();
-        println!("\x1b[32miJiege OS v0.1.0 - RISC-V64 Kernel\x1b[0m");
+        println!("\x1b[32m");
+        println!("██╗     ██╗     ██╗███████╗ ██████╗ ███████╗");
+        println!("██║██╗██║██║     ██║██╔════╝██╔════╝ ██╔════╝");
+        println!("╚███╔███╔╝██║    ██║█████╗  ██║  ███╗█████╗  ");
+        println!(" ╚██╔╝╚██╔╝██║   ██║██╔══╝  ██║   ██║██╔══╝  ");
+        println!("  ╚═╝  ╚═╝ ██║██╗██║███████╗╚██████╔╝███████╗");
+        println!("            ╚═╝╚═╝╚══════╝ ╚═════╝ ╚══════╝");
+        println!("\x1b[0m");
+        println!("iJiege OS v0.1.0 - RISC-V64 OS Kernel in Rust");
         println!("Hart ID: {}, DTB: {:#x}", hart_id, dtb_pa);
 
-        println!("Initializing memory...");
+        // 初始化内存管理
         mm::init();
-        println!("Memory initialized OK");
+        println!("Memory management initialized");
+
+        // 初始化日志系统
         logger::init();
-        log::info!("Memory initialized");
 
-        println!("Initializing arch...");
+        // 初始化架构相关（陷阱处理等）
         arch::init();
-        log::info!("Architecture initialized");
+        println!("Architecture initialized");
 
-        println!("Initializing timer...");
+        // 初始化定时器
         timer::init();
 
-        println!("Initializing drivers...");
+        // 初始化驱动（VirtIO等）
         drivers::init(dtb_pa);
-        log::info!("Drivers initialized");
+        println!("Drivers initialized");
 
-        println!("Initializing filesystem...");
+        // 初始化文件系统
         fs::init();
-        log::info!("Filesystem initialized");
+        println!("Filesystem initialized");
 
-        println!("Initializing network...");
+        // 初始化网络栈
         net::init();
-        log::info!("Network initialized");
+        println!("Network initialized");
 
-        println!("Initializing tasks...");
+        // 初始化任务管理
         task::init();
-        log::info!("Task manager initialized");
+        println!("Task manager initialized");
 
         KERNEL_STARTED.store(true, Ordering::SeqCst);
 
-        log::info!("Starting init process...");
+        // 运行初始进程（init）
+        println!("Starting init process...");
         task::run_first_task();
     } else {
+        // 等待主 hart 完成初始化
         while !KERNEL_STARTED.load(Ordering::SeqCst) {
             core::hint::spin_loop();
         }
+        // 其他 hart 暂时空转
         loop {
             arch::wait_for_interrupt();
         }
     }
 
-    unreachable!()
+    unreachable!("kernel_main should never return");
 }
 
 mod logger {
@@ -98,7 +112,7 @@ mod logger {
                     Level::Debug => "\x1b[36m",
                     Level::Trace => "\x1b[37m",
                 };
-                crate::println!(
+                println!(
                     "{}[{}] {}\x1b[0m",
                     color,
                     record.level(),
@@ -114,6 +128,6 @@ mod logger {
 
     pub fn init() {
         log::set_logger(&LOGGER).unwrap();
-        log::set_max_level(LevelFilter::Error);
+        log::set_max_level(LevelFilter::Debug);
     }
 }
