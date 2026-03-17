@@ -615,6 +615,19 @@ impl MemorySet {
 
         memory_set.brk = user_space.brk;
         memory_set.brk_start = user_space.brk_start;
+
+        // 复制 brk 帧
+        for (vpn, src_frame) in &user_space.brk_frames {
+            if let Some(dst_frame) = frame_alloc() {
+                dst_frame.ppn.get_bytes_array().copy_from_slice(src_frame.ppn.get_bytes_array());
+                let flags = user_space.page_table.translate(*vpn)
+                    .map(|e| e.flags())
+                    .unwrap_or(PTEFlags::V | PTEFlags::R | PTEFlags::W | PTEFlags::U | PTEFlags::A | PTEFlags::D);
+                memory_set.page_table.map(*vpn, dst_frame.ppn, flags);
+                memory_set.brk_frames.insert(*vpn, dst_frame);
+            }
+        }
+
         memory_set
     }
 }
