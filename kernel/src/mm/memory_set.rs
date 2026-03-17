@@ -580,14 +580,46 @@ impl MemorySet {
 
         for area in user_space.areas.iter() {
             let mut new_area = area.clone();
-            // 重新映射
-            for vpn in area.vpn_range.clone().into_iter() {
-                let src_ppn = user_space.translate(vpn).unwrap().ppn();
-                if let Some(frame) = frame_alloc() {
-                    frame.ppn.get_bytes_array().copy_from_slice(src_ppn.get_bytes_array());
-                    let flags = user_space.page_table.translate(vpn).unwrap().flags();
-                    memory_set.page_table.map(vpn, frame.ppn, flags);
-                    new_area.data_frames.insert(vpn, frame);
+            match area.map_type {
+                MapType::Identical => {
+                    // 恒等映射直接重用，无需分配新帧
+                    for vpn in area.vpn_range.clone().into_iter() {
+                        if let Some(pte) = user_space.page_table.translate(vpn) {
+                            if pte.is_valid() {
+                                memory_set.page_table.map(vpn, pte.ppn(), pte.flags());
+                            }
+                        }
+                    }
+                }
+                MapType::Framed => {
+                    // 有数据的页：复制物理帧
+                    for vpn in area.vpn_range.clone().into_iter() {
+                        if let Some(pte) = user_space.page_table.translate(vpn) {
+                            if pte.is_valid() {
+                                let src_ppn = pte.ppn();
+                                if let Some(frame) = frame_alloc() {
+                                    frame.ppn.get_bytes_array().copy_from_slice(src_ppn.get_bytes_array());
+                                    memory_set.page_table.map(vpn, frame.ppn, pte.flags());
+                                    new_area.data_frames.insert(vpn, frame);
+                                }
+                            }
+                        }
+                    }
+                }
+                MapType::Lazy => {
+                    // Lazy 区域：只复制已经实际映射的页
+                    for vpn in area.vpn_range.clone().into_iter() {
+                        if let Some(pte) = user_space.page_table.translate(vpn) {
+                            if pte.is_valid() {
+                                let src_ppn = pte.ppn();
+                                if let Some(frame) = frame_alloc() {
+                                    frame.ppn.get_bytes_array().copy_from_slice(src_ppn.get_bytes_array());
+                                    memory_set.page_table.map(vpn, frame.ppn, pte.flags());
+                                    new_area.data_frames.insert(vpn, frame);
+                                }
+                            }
+                        }
+                    }
                 }
             }
             memory_set.areas.push(new_area);
