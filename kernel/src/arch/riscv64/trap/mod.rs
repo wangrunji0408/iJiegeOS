@@ -111,6 +111,10 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
                         log::warn!("[2]sc{}({:#x})={}", syscall_id, args[0], ret);
                     }
                 }
+                // 记录 sc258 的调用 PC（sepc 已经 +4，需要减去 4）
+                if syscall_id == 258 {
+                    log::error!("sc258 called from sepc={:#x}", ctx.sepc - 4);
+                }
             }
             if syscall_id == 222 || syscall_id == 214 || syscall_id == 226 {
                 log::debug!("syscall {} ret={:#x}", syscall_id, ret as usize);
