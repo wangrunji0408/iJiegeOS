@@ -97,34 +97,17 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
             let syscall_id = ctx.syscall_id();
             let args = ctx.syscall_args();
             log::debug!("syscall: id={}, args={:?}", syscall_id, args);
-            // 仅在 fork 后（pid > 1）时输出 warn 级别的关键 syscall 日志
-            let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(0);
-            if pid > 1 {
-                // 记录关键的 syscall（不包括高频的 sched/clock）
-                match syscall_id {
-                    56 | 57 | 63 | 64 | 65 | 66 | 67 | 80 | 79 => {
-                        log::warn!("[pid={}] syscall id={} args={:?}", pid, syscall_id, &args[..3]);
-                    }
-                    _ if syscall_id != 96 && syscall_id != 113 && syscall_id != 135 => {
-                        log::warn!("[pid={}] syscall id={} args={:?}", pid, syscall_id, &args[..3]);
-                    }
-                    _ => {}
+            let ret = crate::syscall::syscall(syscall_id, args, ctx);
+            // 在 fork 后（pid > 1），记录关键 syscall（排除高频调用）
+            {
+                let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(0);
+                let is_frequent = matches!(syscall_id, 96 | 113 | 114 | 135 | 133 | 25);
+                if pid > 1 && !is_frequent {
+                    log::warn!("[pid={}] sc={} ret={}", pid, syscall_id, ret);
                 }
             }
-            let ret = crate::syscall::syscall(syscall_id, args, ctx);
             if syscall_id == 222 || syscall_id == 214 || syscall_id == 226 {
                 log::debug!("syscall {} ret={:#x}", syscall_id, ret as usize);
-            }
-            if pid > 1 {
-                match syscall_id {
-                    56 | 57 | 63 | 64 | 65 | 66 | 67 | 80 | 79 => {
-                        log::warn!("[pid={}] syscall id={} ret={}", pid, syscall_id, ret);
-                    }
-                    _ if syscall_id != 96 && syscall_id != 113 && syscall_id != 135 => {
-                        log::warn!("[pid={}] syscall id={} ret={}", pid, syscall_id, ret);
-                    }
-                    _ => {}
-                }
             }
             ctx.set_return_value(ret as usize);
         }
