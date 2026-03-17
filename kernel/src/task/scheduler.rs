@@ -131,7 +131,7 @@ pub fn exit_current_and_run_next(exit_code: usize) {
             }
         } else {
             // 没有更多任务，挂起
-            log::info!("No more tasks, system idle");
+            log::error!("No more tasks! system idle");
             loop {
                 crate::arch::wait_for_interrupt();
             }
