@@ -106,7 +106,7 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
                         p(if d < 10 { b'0' + d } else { b'a' + d - 10 });
                     }
                 }
-                ps("[2]trap cause="); ph(scause.bits()); ps(" sepc="); ph(ctx.sepc as u64); ps(" stval="); ph(stval as u64); ps("\n");
+                ps("[2]trap cause="); ph(scause.bits() as u64); ps(" sepc="); ph(ctx.sepc as u64); ps(" stval="); ph(stval as u64); ps("\n");
             }
             // 检测 clone（220 的 syscall），但 scause=8 时才是 syscall
         }
