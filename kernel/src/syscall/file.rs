@@ -86,6 +86,7 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> i64 {
 pub fn sys_openat(dirfd: i32, path: *const u8, flags: i32, mode: u32) -> i64 {
     let path_str = user_str(path);
     let abs_path = resolve_path(dirfd, &path_str);
+    log::warn!("openat: path={}, flags={:#x}", abs_path, flags);
 
     let file = crate::fs::open(&abs_path, flags, mode);
     let file = match file {
