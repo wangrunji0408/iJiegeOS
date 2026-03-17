@@ -132,10 +132,14 @@ pub fn sys_fstat(fd: usize, stat: *mut FileStat) -> i64 {
 pub fn sys_newfstatat(dirfd: i32, path: *const u8, stat: *mut FileStat, flags: i32) -> i64 {
     let path_str = user_str(path);
     let abs_path = resolve_path(dirfd, &path_str);
+    log::warn!("newfstatat: path={}", abs_path);
 
     let file_stat = match crate::fs::stat(&abs_path) {
         Some(s) => s,
-        None => return ENOENT,
+        None => {
+            log::warn!("newfstatat: ENOENT for {}", abs_path);
+            return ENOENT;
+        }
     };
 
     if !stat.is_null() {
