@@ -418,8 +418,6 @@ impl MemorySet {
                     }
 
                     let already_mapped = self.page_table.translate(vpn).map(|e| e.is_valid()).unwrap_or(false);
-                    log::error!("cow_fault: addr={:#x} vpn={:#x} ppn={:#x} flags={:#x} already={} prot={}",
-                        addr, vpn.0, ppn.0, flags.bits(), already_mapped, prot);
                     if already_mapped {
                         self.page_table.set_flags(vpn, flags);
                     } else {
@@ -432,7 +430,6 @@ impl MemorySet {
             }
         }
         log::error!("cow_fault: addr={:#x} NOT in any mmap_area", addr);
-        false
     }
 
     /// 注册一个懒加载的文件映射区域（不立即读取文件内容）
