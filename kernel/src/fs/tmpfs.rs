@@ -375,6 +375,8 @@ impl FileDescriptor for TmpFile {
         let data = self.data.lock();
         let now = crate::timer::get_time_ms() as i64 / 1000;
         FileStat {
+            st_dev: 1,
+            st_ino: self.ino,
             st_mode: super::inode::InodeType::Regular.mode_bits() | 0o644,
             st_nlink: 1,
             st_size: data.len() as i64,
