@@ -282,32 +282,12 @@ impl MemorySet {
         };
         let end = (start + len + 4095) & !4095;
 
-        let mut area = MmapArea {
+        // 懒加载：不立即分配物理内存，page fault 时才分配
+        let area = MmapArea {
             start, end, prot, flags: 0,
             data_frames: BTreeMap::new(),
             file: None, file_offset: 0,
         };
-
-        // 立即分配
-        let start_vpn = VirtAddr::from(start).floor();
-        let end_vpn = VirtAddr::from(end).ceil();
-        let mut flags = PTEFlags::V | PTEFlags::A | PTEFlags::D | PTEFlags::U;
-        if prot & 1 != 0 { flags |= PTEFlags::R; }
-        if prot & 2 != 0 { flags |= PTEFlags::W; }
-        if prot & 4 != 0 { flags |= PTEFlags::X; }
-        for vpn in VPNRange::new(start_vpn, end_vpn).into_iter() {
-            if self.page_table.translate(vpn).map(|e| e.is_valid()).unwrap_or(false) {
-                // 已有映射：仅更新权限（MAP_FIXED 覆盖已有映射）
-                self.page_table.set_flags(vpn, flags);
-            } else {
-                // 分配新帧
-                if let Some(frame) = frame_alloc() {
-                    let ppn = frame.ppn;
-                    self.page_table.map(vpn, ppn, flags);
-                    area.data_frames.insert(vpn, frame);
-                }
-            }
-        }
 
         self.mmap_areas.push(area);
         start
