@@ -109,7 +109,7 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
                     // pid=1(master) 的所有调用都记录；pid=2(worker) 只记录非频繁调用
                     let is_frequent_worker = matches!(syscall_id, 96 | 113 | 114 | 25 | 134 | 135 | 222 | 214 | 215 | 226 | 133 | 124);
                     if pid == 1 || !is_frequent_worker {
-                        log::warn!("[pid={}] sc={} ret={}", pid, syscall_id, ret);
+                        log::warn!("[pid={}] sc={} sepc={:#x} ret={}", pid, syscall_id, ctx.sepc, ret);
                     }
                 }
             }
