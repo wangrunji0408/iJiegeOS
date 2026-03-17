@@ -113,7 +113,7 @@ fn load_elf_to_memory_set(ms: &mut MemorySet, elf_data: &[u8], base_override: Op
         // 从文件复制数据（file_size 部分）
         if file_size > 0 {
             let src = &elf_data[file_offset..file_offset + file_size];
-            copy_to_user_pages(&mut ms, va_start, src);
+            copy_to_pages(&mut ms.page_table, va_start, src);
         }
 
         // BSS 部分已经是零（MapType::Framed 分配清零的帧）
@@ -174,8 +174,8 @@ fn load_elf_to_memory_set(ms: &mut MemorySet, elf_data: &[u8], base_override: Op
     }
 }
 
-/// 将数据写入用户地址空间（跨页处理）
-fn copy_to_user_pages(ms: &mut MemorySet, va_start: usize, data: &[u8]) {
+/// 将数据写入用户地址空间（通过页表）
+fn copy_to_pages(page_table: &mut crate::mm::PageTable, va_start: usize, data: &[u8]) {
     let mut written = 0;
     let total = data.len();
 
@@ -186,12 +186,12 @@ fn copy_to_user_pages(ms: &mut MemorySet, va_start: usize, data: &[u8]) {
         let avail = PAGE_SIZE - page_offset;
         let to_write = (total - written).min(avail);
 
-        if let Some(pte) = ms.page_table.translate(vpn) {
+        if let Some(pte) = page_table.translate(vpn) {
             let page = pte.ppn().get_bytes_array();
             page[page_offset..page_offset + to_write]
                 .copy_from_slice(&data[written..written + to_write]);
         } else {
-            log::warn!("copy_to_user_pages: no mapping for va={:#x}", va);
+            log::warn!("copy_to_pages: no mapping for va={:#x}", va);
         }
 
         written += to_write;
