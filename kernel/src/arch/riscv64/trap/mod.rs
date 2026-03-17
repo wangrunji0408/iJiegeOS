@@ -125,8 +125,8 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
         Trap::Exception(Exception::LoadFault)
         | Trap::Exception(Exception::LoadPageFault) => {
             if !crate::mm::handle_page_fault(stval, scause.bits()) {
-                log::warn!("Load fault: addr={:#x}, sepc={:#x}, ra={:#x}, sp={:#x}",
-                    stval, ctx.sepc, ctx.x[1], ctx.x[2]);
+                log::warn!("Load fault: addr={:#x}, sepc={:#x}, ra={:#x}, sp={:#x}, a0={:#x}, a1={:#x}, a2={:#x}, s0={:#x}",
+                    stval, ctx.sepc, ctx.x[1], ctx.x[2], ctx.x[10], ctx.x[11], ctx.x[12], ctx.x[8]);
                 crate::task::current_add_signal(crate::signal::Signal::SIGSEGV);
             }
         }
