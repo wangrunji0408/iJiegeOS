@@ -471,7 +471,10 @@ impl FileDescriptor for TmpDir {
     }
 
     fn getdents(&self, buf: &mut [u8]) -> isize {
-        let entries = self.readdir()?;
+        let entries = match self.readdir() {
+            Some(e) => e,
+            None => return -1,
+        };
         let mut offset = *self.offset.lock();
         let mut written = 0;
 
