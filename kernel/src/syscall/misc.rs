@@ -214,6 +214,14 @@ impl crate::fs::FileDescriptor for EventFd {
     }
 
     fn can_write(&self) -> bool { true }
+
+    fn ioctl(&self, request: u64, arg: usize) -> isize {
+        // FIONBIO (0x5421) - 设置/清除非阻塞模式，对 eventfd 忽略即可
+        0
+    }
+
+    fn set_nonblock(&self, _nonblock: bool) {}
+    fn is_nonblock(&self) -> bool { true }  // eventfd 总是非阻塞
 }
 
 pub fn sys_timerfd_create(clockid: i32, flags: i32) -> i64 {
