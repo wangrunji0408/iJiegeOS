@@ -440,7 +440,7 @@ impl MemorySet {
                 if let Some(frame) = frame_alloc() {
                     let ppn = frame.ppn;
                     self.page_table.map(vpn, ppn, flags);
-                    // 简化：不记录 frame，帧泄漏（将来需要 heap_frames 管理）
+                    self.brk_frames.insert(vpn, frame);
                 }
             }
         }
