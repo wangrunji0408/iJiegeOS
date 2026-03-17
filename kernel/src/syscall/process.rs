@@ -93,7 +93,7 @@ pub fn sys_clone(flags: usize, child_sp: usize, ptid: usize, ctid: usize, newtls
     let child_task = fork_task(&current, flags, child_sp, ptid, ctid, newtls, ctx);
     let child_pid = child_task.pid.0;
     add_task(Arc::new(child_task));
-    log::warn!("[pid={}] clone: child_pid={}", parent_pid, child_pid);
+    log::debug!("[pid={}] clone: child_pid={}", parent_pid, child_pid);
     child_pid as i64
 }
 

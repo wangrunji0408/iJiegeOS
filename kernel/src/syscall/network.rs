@@ -305,7 +305,7 @@ pub fn sys_getsockopt(fd: usize, level: i32, optname: i32, optval: *mut u8, optl
         }
         _ => 0,
     };
-    log::warn!("gs:{}({},{})={}", fd, level, optname, val);
+    log::debug!("gs:{}({},{})={}", fd, level, optname, val);
 
     *translated_refmut(tok, optval as *mut i32) = val;
     *translated_refmut(tok, optlen) = 4u32;
