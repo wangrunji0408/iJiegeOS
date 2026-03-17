@@ -75,6 +75,7 @@ pub trait FileDescriptor: Send + Sync {
     fn set_flags(&self, flags: i32) {}
     fn flock(&self, how: i32) -> isize { 0 }
     fn as_socket(&self) -> Option<&super::socket::Socket> { None }
+    fn epoll_id(&self) -> Option<usize> { None }
 }
 
 /// 文件系统 trait
