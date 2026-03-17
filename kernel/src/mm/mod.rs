@@ -27,13 +27,8 @@ pub fn init() {
 /// 处理页面错误（懒分配）
 pub fn handle_page_fault(addr: usize, cause: usize) -> bool {
     if let Some(task) = crate::task::current_task() {
-        log::warn!("handle_page_fault: addr={:#x}, locking inner...", addr);
-        let result = {
-            let mut inner = task.inner_exclusive_access();
-            inner.memory_set.handle_cow_fault(addr)
-        };  // inner lock released here
-        log::warn!("handle_page_fault: addr={:#x}, result={}", addr, result);
-        result
+        let mut inner = task.inner_exclusive_access();
+        inner.memory_set.handle_cow_fault(addr)
     } else {
         false
     }
