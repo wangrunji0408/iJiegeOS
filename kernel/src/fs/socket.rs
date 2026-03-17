@@ -75,6 +75,14 @@ impl FileDescriptor for Socket {
 
     fn can_read(&self) -> bool {
         let inner = self.inner.lock();
+        // 已连接的 socket：有数据可读
+        // 监听 socket：有待接受的连接
+        if inner.listening {
+            let port = inner.local_addr.as_ref().map(|a| a.port).unwrap_or(0);
+            if port > 0 {
+                return crate::net::tcp_has_pending(port);
+            }
+        }
         !inner.recv_buf.is_empty()
     }
 
