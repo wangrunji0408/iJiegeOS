@@ -465,8 +465,8 @@ pub fn sys_sendfile(out_fd: usize, in_fd: usize, offset: *mut i64, count: usize)
 
     let mut buf = alloc::vec![0u8; count.min(65536)];
     let n = in_file.read(&mut buf);
-    if n <= 0 { return n; }
-    out_file.write(&buf[..n as usize])
+    if n <= 0 { return n as i64; }
+    out_file.write(&buf[..n as usize]) as i64
 }
 
 pub fn sys_getcwd(buf: *mut u8, size: usize) -> i64 {
