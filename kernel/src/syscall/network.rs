@@ -51,14 +51,14 @@ pub fn sys_bind(fd: usize, addr: *const u8, addrlen: u32) -> i64 {
     };
 
     if let Some(sa) = crate::net::parse_sockaddr(&addr_bytes) {
-        log::warn!("sys_bind: fd={}, port={}, ip={:?}", fd, sa.port, sa.ip);
+        log::warn!("bind:{} port={}", fd, sa.port);
         let mut inner = socket.inner.lock();
         inner.local_addr = Some(sa);
         inner.bound = true;
         0
     } else if addr_bytes.len() >= 2 {
         // AF_UNIX
-        log::warn!("sys_bind: fd={}, AF_UNIX", fd);
+        log::warn!("bind:{} AF_UNIX", fd);
         let mut inner = socket.inner.lock();
         inner.bound = true;
         0
@@ -68,7 +68,7 @@ pub fn sys_bind(fd: usize, addr: *const u8, addrlen: u32) -> i64 {
 }
 
 pub fn sys_listen(fd: usize, backlog: i32) -> i64 {
-    log::warn!("sys_listen: fd={}, backlog={}", fd, backlog);
+    log::warn!("listen:{}", fd);
     let task = current_task().unwrap();
     let inner = task.inner_exclusive_access();
     let file = match inner.get_fd(fd) {
