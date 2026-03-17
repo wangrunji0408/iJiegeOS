@@ -68,7 +68,7 @@ pub fn sys_bind(fd: usize, addr: *const u8, addrlen: u32) -> i64 {
 }
 
 pub fn sys_listen(fd: usize, backlog: i32) -> i64 {
-    log::debug!("listen:{}", fd);
+    log::warn!("sys_listen: fd={}", fd);
     let task = current_task().unwrap();
     let inner = task.inner_exclusive_access();
     let file = match inner.get_fd(fd) {
