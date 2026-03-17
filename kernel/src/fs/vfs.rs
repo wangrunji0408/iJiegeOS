@@ -60,7 +60,7 @@ pub trait FileDescriptor: Send + Sync {
     fn seek(&self, offset: i64, whence: i32) -> i64 { -1 }
     fn get_offset(&self) -> u64 { 0 }
     fn truncate(&self, size: u64) -> isize { -1 }
-    fn ioctl(&self, request: u64, arg: usize) -> isize { -1 }
+    fn ioctl(&self, request: u64, arg: usize) -> isize { -25 }  // ENOTTY
     fn fcntl(&self, cmd: i32, arg: usize) -> isize { 0 }
     fn set_nonblock(&self, nonblock: bool) {}
     fn is_nonblock(&self) -> bool { false }
