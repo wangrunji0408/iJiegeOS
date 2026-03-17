@@ -16,7 +16,8 @@ pub const TRAP_CONTEXT_BASE: usize = 0;
 ///   x[0..32]: offset 0..256     (通用寄存器)
 ///   sstatus:  offset 256
 ///   sepc:     offset 264
-///   satp:     offset 272        (用户进程的页表 token，用于切换)
+///   user_satp: offset 272       (用户进程的页表 token)
+///   kernel_satp: offset 280     (内核页表 token，用于从用户态陷入时切换)
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct TrapContext {
@@ -28,6 +29,8 @@ pub struct TrapContext {
     pub sepc: usize,
     /// 用户进程页表 token (satp 寄存器值)
     pub user_satp: usize,
+    /// 内核页表 token（切换回内核时用）
+    pub kernel_satp: usize,
 }
 
 impl TrapContext {
@@ -45,7 +48,8 @@ impl TrapContext {
             x: [0; 32],
             sstatus: sstatus_val,
             sepc: entry,
-            user_satp: 0,  // 由 task 设置
+            user_satp: 0,      // 由 task 设置
+            kernel_satp: 0,    // 由 task 设置
         };
         ctx.x[2] = user_sp;
         ctx
