@@ -43,7 +43,7 @@ unsafe impl Hal for VirtioHalImpl {
         (pa.0, core::ptr::NonNull::new(va as *mut u8).unwrap())
     }
 
-    fn dma_dealloc(paddr: virtio_drivers::PhysAddr, vaddr: core::ptr::NonNull<u8>, pages: usize) -> i32 {
+    unsafe fn dma_dealloc(paddr: virtio_drivers::PhysAddr, vaddr: core::ptr::NonNull<u8>, pages: usize) -> i32 {
         // 简化：不释放 DMA 内存
         0
     }
