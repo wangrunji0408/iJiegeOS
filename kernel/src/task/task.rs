@@ -179,12 +179,15 @@ impl Task {
         let pid = PID_ALLOCATOR.alloc();
         let kernel_stack = KernelStack::new();
 
-        // 创建用户地址空间
-        let (mut memory_set, user_sp_top, entry_point) = MemorySet::new_user(elf_data);
+        // 创建用户地址空间（包含内核映射），并加载 ELF（PIE 支持）
+        let mut memory_set = MemorySet::new_user_bare();
+        let elf_result = crate::loader::load_elf_full(&mut memory_set, elf_data, None);
 
-        // 在用户栈上设置 argv/envp
-        let user_sp = setup_user_stack(&mut memory_set, user_sp_top, argv, envp);
-        log::info!("user_sp_top={:#x}, user_sp={:#x}", user_sp_top, user_sp);
+        // 在用户栈上设置 argv/envp/auxv（包含 AT_BASE 等）
+        let user_sp = setup_user_stack(&mut memory_set, elf_result.stack_top, argv, envp,
+            elf_result.base, elf_result.phdr_vaddr, elf_result.phnum, elf_result.phent,
+            elf_result.entry);
+        log::info!("user_sp_top={:#x}, user_sp={:#x}", elf_result.stack_top, user_sp);
 
         // TrapContext 放在内核栈顶部
         let trap_cx_addr = kernel_stack.trap_cx_addr();
@@ -192,13 +195,10 @@ impl Task {
 
         // 创建 TrapContext
         let trap_cx = unsafe { &mut *(trap_cx_addr as *mut TrapContext) };
-        *trap_cx = TrapContext::new(entry_point, user_sp);
+        *trap_cx = TrapContext::new(elf_result.entry, user_sp);
         // 设置用户页表 satp
         trap_cx.user_satp = memory_set.token();
         trap_cx.kernel_satp = riscv::register::satp::read().bits();
-        // argc 在 a0，argv 在 a1
-        trap_cx.x[10] = argv.len();  // a0 = argc
-        trap_cx.x[11] = user_sp;     // a1 = argv（栈顶就是 argv 数组）
 
         let task_cx = TaskContext::goto_trap_return(kernel_sp);
         let fd_table = setup_initial_fds();
@@ -214,8 +214,8 @@ impl Task {
             pending_signals: Vec::new(),
             fd_table,
             cwd: String::from("/"),
-            heap_start: user_sp_top,
-            heap_end: user_sp_top,
+            heap_start: elf_result.brk_start,
+            heap_end: elf_result.brk_start,
             uid: 0,
             gid: 0,
             euid: 0,
