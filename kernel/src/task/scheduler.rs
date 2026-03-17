@@ -86,23 +86,31 @@ fn sbi_dec(mut n: i32) {
 
 /// 挂起当前任务，切换到下一个就绪任务
 pub fn suspend_current_and_run_next() {
+    sbi_puts("S0\n");  // 进入函数
     let current = {
         let guard = CURRENT_TASK.lock();
+        sbi_puts("S1\n");  // 获取 CURRENT_TASK 成功
         guard.clone()
     };
+    sbi_puts("S2\n");  // CURRENT_TASK 释放
 
     if let Some(task) = current {
         let cur_pid = task.pid.0;
+        sbi_puts("S3\n");  // 有当前任务
         let mut inner = task.inner_exclusive_access();
+        sbi_puts("S4\n");  // 获取 inner 成功
         inner.state = TaskState::Ready;
         let current_cx = &mut inner.task_cx as *mut TaskContext;
         drop(inner);
+        sbi_puts("S5\n");  // inner 释放
 
         // 把当前任务放回就绪队列
         TASK_MANAGER.lock().push_ready(task.clone());
+        sbi_puts("S6\n");  // push_ready 完成
 
         // 找下一个任务
         if let Some(next_task) = TASK_MANAGER.lock().pop_ready() {
+            sbi_puts("S7\n");  // pop_ready 有结果
             let mut next_inner = next_task.inner_exclusive_access();
             next_inner.state = TaskState::Running;
             let next_cx = &next_inner.task_cx as *const TaskContext;
