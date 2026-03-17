@@ -127,11 +127,13 @@ fn fork_task(parent: &Arc<Task>, flags: usize, child_sp: usize, ptid: usize, cti
     let brk = memory_set.brk;
     let brk_start = memory_set.brk_start;
 
-    // 如果需要设置子进程 TID
-    if ctid != 0 {
+    // 如果需要设置子进程 TID（ctid 需要是有效用户空间地址）
+    if ctid > 0x1000 {  // 跳过无效地址（如太小的值）
         let tok = memory_set.token();
-        let user_tid = crate::mm::translated_refmut(tok, ctid as *mut i32);
-        *user_tid = pid.0;
+        if let Some(pa) = crate::mm::PageTable::from_token(tok).translate_va(crate::mm::VirtAddr::from(ctid)) {
+            let user_tid = pa.get_mut::<i32>();
+            *user_tid = pid.0;
+        }
     }
 
     let inner = crate::task::task::TaskInner {
