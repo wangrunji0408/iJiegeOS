@@ -28,7 +28,7 @@ impl TrapContext {
         let sstatus_val = {
             let bits = sstatus::read();
             // SPP = 0 (User), SPIE = 1
-            let mut val = bits.bits();
+            let mut val: usize = unsafe { core::mem::transmute(bits) };
             val &= !(1 << 8);  // clear SPP (User)
             val |= 1 << 5;     // set SPIE
             val
