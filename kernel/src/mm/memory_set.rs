@@ -269,6 +269,8 @@ impl MemorySet {
             self.munmap(start, end - start);
         }
 
+        log::error!("mmap_anon: [{:#x},{:#x}) prot={}", start, end, prot);
+
         // 懒加载：不立即分配物理内存，page fault 时才分配
         let area = MmapArea {
             start, end, prot, flags: 0,
