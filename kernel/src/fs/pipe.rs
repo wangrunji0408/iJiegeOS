@@ -11,6 +11,7 @@ struct PipeInner {
     buf: VecDeque<u8>,
     writer_count: usize,
     reader_count: usize,
+    nonblock: bool,
 }
 
 pub struct Pipe {
@@ -33,6 +34,7 @@ pub fn create_pipe() -> (Arc<Pipe>, Arc<Pipe>) {
         buf: VecDeque::new(),
         writer_count: 1,
         reader_count: 1,
+        nonblock: false,
     }));
     (
         Arc::new(Pipe::new_read(inner.clone())),
@@ -81,6 +83,27 @@ impl FileDescriptor for Pipe {
 
     fn is_readable(&self) -> bool { self.is_read_end }
     fn is_writable(&self) -> bool { !self.is_read_end }
+
+    fn ioctl(&self, request: u64, arg: usize) -> isize {
+        const FIONBIO: u64 = 0x5421;
+        match request {
+            FIONBIO => {
+                let tok = crate::task::current_user_token();
+                let val = *crate::mm::translated_ref(tok, arg as *const i32);
+                self.inner.lock().nonblock = val != 0;
+                0
+            }
+            _ => 0,
+        }
+    }
+
+    fn set_nonblock(&self, nonblock: bool) {
+        self.inner.lock().nonblock = nonblock;
+    }
+
+    fn is_nonblock(&self) -> bool {
+        self.inner.lock().nonblock
+    }
 
     fn can_read(&self) -> bool {
         let inner = self.inner.lock();
