@@ -169,10 +169,12 @@ impl Task {
         }
     }
 
-    pub fn inner_exclusive_access(&self) -> spin::MutexGuard<TaskInner> {
-        self.inner.lock()
+    /// 从 ELF 数据创建新进程（带命令行参数）
+    pub fn new_from_elf_with_args(elf_data: &[u8], _path: &str, argv: &[&str], _envp: &[&str]) -> Self {
+        // 简化：暂时忽略参数，直接加载 ELF
+        // TODO: 将参数压入用户栈
+        Self::new_from_elf(elf_data)
     }
-}
 
 impl TaskInner {
     pub fn get_trap_cx(&self) -> &'static mut TrapContext {
