@@ -139,9 +139,11 @@ pub fn handle_virtio_interrupt(irq: usize) {
             // 块设备中断（完成一次 I/O）
         }
         DeviceType::Network => {
-            // 网络设备中断（收到数据包）
-            // 在中断处理程序里不做实际处理，避免死锁
-            // net::poll() 会主动轮询并读取数据包
+            // ack 网络设备中断
+            if let Some(ref mut net) = NET_DEVICE.lock().as_mut() {
+                net.ack_interrupt();
+            }
+            // 数据包处理由 net::poll() 在用户态调用时完成
         }
         _ => {}
     }
