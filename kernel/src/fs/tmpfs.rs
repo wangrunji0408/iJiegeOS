@@ -425,6 +425,33 @@ impl FileDescriptor for TmpFile {
         *self.flags.lock()
     }
 
+    fn read_at(&self, offset: u64, buf: &mut [u8]) -> isize {
+        if !self.readable { return -1; }
+        let data = self.data.lock();
+        let start = offset as usize;
+        if start >= data.len() { return 0; }
+        let end = (start + buf.len()).min(data.len());
+        let n = end - start;
+        buf[..n].copy_from_slice(&data[start..end]);
+        n as isize
+    }
+
+    fn write_at(&self, offset: u64, buf: &[u8]) -> isize {
+        if !self.writable { return -1; }
+        let mut data = self.data.lock();
+        let pos = offset as usize;
+        if pos + buf.len() > data.len() {
+            data.resize(pos + buf.len(), 0);
+        }
+        data[pos..pos + buf.len()].copy_from_slice(buf);
+        let fs = self.get_fs();
+        let mut nodes = fs.nodes.lock();
+        if let Some(FsNode::File(f)) = nodes.get_mut(&self.path) {
+            f.data = data.clone();
+        }
+        buf.len() as isize
+    }
+
     fn set_flags(&self, flags: i32) {
         *self.flags.lock() = flags;
     }
