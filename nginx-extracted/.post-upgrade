@@ -1,0 +1,57 @@
+#!/bin/sh
+
+ver_new="$1"
+ver_old="$2"
+
+if [ "$(apk version -t "$ver_old" "1.10.1-r3")" = "<" ]; then
+	cat 1>&2 <<-EOF
+	*
+	* The nginx package has been modified to use dynamic modules. Now there's
+	* just single package providing nginx executable and bunch of nginx-mod-*
+	* subpackages.
+	*
+	* Lua support is now provided by package nginx-mod-http-lua, RTMP support
+	* is provided by nginx-mod-rtmp.
+	*
+	* Modules mail and stream are dynamic modules too and so not included
+	* by default anymore. If you use them, install nginx-mod-mail and
+	* nginx-mod-stream.
+	* 
+	EOF
+fi
+
+# Handle transition from /etc/nginx/conf.d to /etc/nginx/http.d.
+if [ "$(apk version -t "$ver_old" '1.18.0-r13')" = '<' ]; then
+	if ! [ -e /etc/nginx/http.d/default.conf ]; then
+		install -D -m644 /usr/share/nginx/http-default_server.conf \
+			/etc/nginx/http.d/default.conf
+	fi
+fi
+
+# Handle transition from /etc/nginx/conf.d to /etc/nginx/http.d.
+if [ "$(apk version -t "$ver_old" '1.22.0-r7')" = '<' ]; then
+	if sed -En '/^http\s*\{/,/^\}/{ /^\s*include\s+\/etc\/nginx\/conf.d\/.*;/p }' /etc/nginx/nginx.conf | grep -q .; then
+		cat >&2 <<-EOF
+		!!
+		!! Found 'include /etc/nginx/conf.d/*.conf' in the 'http' section!
+		!! The default and preferred location for nginx http configs has been changed
+		!! from /etc/nginx/conf.d to /etc/nginx/http.d. The former is now used for
+		!! configs to be included in the root context. Move your vhost configs from
+		!! /etc/nginx/conf.d/ to /etc/nginx/http.d/ and update /etc/nginx/nginx.conf.
+		!!
+		EOF
+	fi
+fi
+
+# Handle trasition from /var/tmp/nginx to /var/lib/nginx/tmp
+# https://gitlab.alpinelinux.org/alpine/aports/-/issues/11204
+if [ -d /var/lib/nginx/tmp ]; then
+	for i in /var/tmp/nginx/*; do
+		if [ -e "$i" ]; then
+			mv $i /var/lib/nginx/tmp/
+		fi
+	done
+	rmdir /var/tmp/nginx 2>/dev/null
+fi
+
+exit 0
