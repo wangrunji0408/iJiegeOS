@@ -120,14 +120,6 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
         }
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
             crate::timer::handle_timer_interrupt();
-            // 调试：记录 timer 中断时的 pid
-            {
-                use core::sync::atomic::{AtomicUsize, Ordering};
-                static TIMER_COUNT: AtomicUsize = AtomicUsize::new(0);
-                let n = TIMER_COUNT.fetch_add(1, Ordering::Relaxed);
-                let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(0);
-                log::warn!("[timer#{}] pid={} sepc={:#x}", n, pid, ctx.sepc);
-            }
             crate::task::suspend_current_and_run_next();
         }
         Trap::Interrupt(Interrupt::SupervisorExternal) => {
