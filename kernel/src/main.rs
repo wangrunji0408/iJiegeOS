@@ -114,6 +114,6 @@ mod logger {
 
     pub fn init() {
         log::set_logger(&LOGGER).unwrap();
-        log::set_max_level(LevelFilter::Warn);
+        log::set_max_level(LevelFilter::Error);
     }
 }
