@@ -111,6 +111,7 @@ fn fork_task(parent: &Arc<Task>, flags: usize, child_sp: usize, ptid: usize, cti
     *trap_cx = *parent_ctx;
     // 更新子进程的用户页表 satp
     trap_cx.user_satp = memory_set.token();
+    trap_cx.kernel_satp = riscv::register::satp::read().bits();
     // 子进程 fork 返回 0
     trap_cx.set_return_value(0);
     // 如果指定了子进程栈
