@@ -115,6 +115,19 @@ pub fn stat(path: &str) -> Option<FileStat> {
     None
 }
 
+/// 读取符号链接目标
+pub fn readlink(path: &str) -> Option<alloc::string::String> {
+    let mount_table = MOUNT_TABLE.lock();
+    for mount in mount_table.iter().rev() {
+        if path.starts_with(mount.path.as_str()) {
+            let rel_path = &path[mount.path.len()..];
+            let rel_path = if rel_path.is_empty() { "/" } else { rel_path };
+            return mount.fs.readlink(rel_path);
+        }
+    }
+    None
+}
+
 /// Linux 兼容的文件统计信息
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
