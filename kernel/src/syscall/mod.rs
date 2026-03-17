@@ -544,7 +544,7 @@ pub fn syscall(id: usize, args: [usize; 6], ctx: &mut TrapContext) -> i64 {
         nr::IO_GETEVENTS => 0,  // io_getevents - 返回 0 (没有事件)
 
         _ => {
-            log::error!("!sc{} args={:#x?}", id, &args[..4]);
+            log::error!("!sc{} a0={:#x} a1={:#x} a2={:#x}", id, args[0], args[1], args[2]);
             ENOSYS
         }
     };
