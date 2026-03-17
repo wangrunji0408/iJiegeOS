@@ -173,6 +173,18 @@ fn make_garp_packet(mac: &[u8; 6], ip: &[u8; 4]) -> Vec<u8> {
 
 /// 轮询网络接口：读取 VirtIO RX → smoltcp → 写出 VirtIO TX
 pub fn poll() {
+    // 每 5 秒记录一次 poll 调用（检查 poll 是否在运行）
+    {
+        use core::sync::atomic::{AtomicU64, Ordering};
+        static LAST_LOG: AtomicU64 = AtomicU64::new(0);
+        let now = crate::timer::get_time_ms();
+        let last = LAST_LOG.load(Ordering::Relaxed);
+        if now > last + 5000 {
+            LAST_LOG.store(now, Ordering::Relaxed);
+            log::warn!("net::poll alive at {}ms", now);
+        }
+    }
+
     // 从真实 VirtIO 设备接收数据包，推入 smoltcp device rx_buf
     let mut rx_count = 0;
     loop {
