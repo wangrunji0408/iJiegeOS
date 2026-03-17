@@ -95,14 +95,16 @@ impl FileDescriptor for Socket {
         const FIONREAD: u64 = 0x541b;
         match request {
             FIONBIO => {
-                // arg is pointer to int; non-zero = set nonblock
-                let val = unsafe { *(arg as *const i32) };
+                // arg is a user-space pointer to int; translate via current page table
+                let tok = crate::task::current_user_token();
+                let val = *crate::mm::translated_ref(tok, arg as *const i32);
                 self.inner.lock().nonblock = val != 0;
                 0
             }
             FIONREAD => {
                 let n = self.inner.lock().recv_buf.len();
-                unsafe { *(arg as *mut i32) = n as i32; }
+                let tok = crate::task::current_user_token();
+                *crate::mm::translated_refmut(tok, arg as *mut i32) = n as i32;
                 0
             }
             _ => 0,
