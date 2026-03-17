@@ -187,14 +187,7 @@ pub fn poll() {
         }
     }
     if rx_count == 0 {
-        // Try to see if can_recv is working
-        let can = {
-            let dev = crate::drivers::NET_DEVICE.lock();
-            dev.as_ref().map(|d| d.can_recv()).unwrap_or(false)
-        };
-        if can {
-            log::warn!("net: can_recv=true but receive() returned None!");
-        }
+        // 测试 can_recv
     }
 
     // 运行 smoltcp 网络栈
