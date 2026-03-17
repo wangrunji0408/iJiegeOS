@@ -250,6 +250,7 @@ impl MemorySet {
         let mut area = MmapArea {
             start, end, prot, flags: 0,
             data_frames: BTreeMap::new(),
+            file: None, file_offset: 0,
         };
         // 立即分配并映射所有页
         let start_vpn = VirtAddr::from(start).floor();
