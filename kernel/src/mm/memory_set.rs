@@ -338,6 +338,12 @@ impl MemorySet {
     fn find_free_area(&self, len: usize) -> usize {
         // 从 0x70000000 开始查找（高于 brk 区域，避免冲突）
         let mut candidate = 0x70000000usize;
+        log::warn!("find_free_area: len={:#x}, brk=[{:#x},{:#x}), areas={}, mmaps={}",
+            len, self.brk_start, self.brk,
+            self.areas.len(), self.mmap_areas.len());
+        for m in &self.mmap_areas {
+            log::warn!("  mmap_area: [{:#x},{:#x})", m.start, m.end);
+        }
         loop {
             let end = (candidate + len + 4095) & !4095;
             let mut conflict = false;
@@ -375,6 +381,7 @@ impl MemorySet {
                 break;
             }
         }
+        log::warn!("find_free_area: returning {:#x}", candidate);
         candidate
     }
 
