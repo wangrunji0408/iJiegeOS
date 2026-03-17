@@ -422,6 +422,8 @@ impl MemorySet {
             self.munmap(start, end - start);
         }
 
+        log::error!("mmap_file: [{:#x},{:#x}) prot={} offset={:#x}", start, end, prot, file_offset);
+
         // 不分配物理内存，只注册虚拟地址范围
         let area = MmapArea {
             start, end, prot, flags: 0,
