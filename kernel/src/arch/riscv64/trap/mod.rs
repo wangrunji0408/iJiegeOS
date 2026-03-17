@@ -2,12 +2,12 @@ use core::arch::global_asm;
 use riscv::register::{
     mtvec::TrapMode,
     scause::{self, Exception, Interrupt, Trap},
-    sie, sscratch, sstatus, stval, stvec,
+    sie, sscratch, sstatus::{self, SPP}, stval, stvec,
 };
 
 global_asm!(include_str!("trap.asm"));
 
-pub const TRAP_CONTEXT_BASE: usize = 0;  // 不使用固定地址，TrapContext 在内核栈上
+pub const TRAP_CONTEXT_BASE: usize = 0;
 
 /// TrapContext: 保存陷阱时的所有寄存器状态
 /// 保存在进程内核栈上（高地址方向）
@@ -23,70 +23,48 @@ pub struct TrapContext {
 }
 
 impl TrapContext {
-    pub fn new(
-        entry: usize,
-        user_sp: usize,
-    ) -> Self {
-        let mut sstatus = sstatus::read();
-        // SPP = User
-        sstatus.set_spp(sstatus::SPP::User);
-        // 开启用户态浮点
+    pub fn new(entry: usize, user_sp: usize) -> Self {
+        // 构造 sstatus：SPP=User, SPIE=1
+        let sstatus_val = {
+            let bits = sstatus::read();
+            // SPP = 0 (User), SPIE = 1
+            let mut val = bits.bits();
+            val &= !(1 << 8);  // clear SPP (User)
+            val |= 1 << 5;     // set SPIE
+            val
+        };
         let mut ctx = Self {
             x: [0; 32],
-            sstatus: sstatus.bits(),
+            sstatus: sstatus_val,
             sepc: entry,
         };
-        ctx.x[2] = user_sp;  // sp
+        ctx.x[2] = user_sp;
         ctx
     }
 
-    pub fn set_sp(&mut self, sp: usize) {
-        self.x[2] = sp;
-    }
+    pub fn set_sp(&mut self, sp: usize) { self.x[2] = sp; }
+    pub fn get_sp(&self) -> usize { self.x[2] }
 
-    pub fn get_sp(&self) -> usize {
-        self.x[2]
-    }
-
-    /// 获取系统调用号 (a7 = x17)
-    pub fn syscall_id(&self) -> usize {
-        self.x[17]
-    }
-
-    /// 获取系统调用参数
+    pub fn syscall_id(&self) -> usize { self.x[17] }
     pub fn syscall_args(&self) -> [usize; 6] {
         [self.x[10], self.x[11], self.x[12], self.x[13], self.x[14], self.x[15]]
     }
-
-    /// 设置系统调用返回值 (a0 = x10)
-    pub fn set_return_value(&mut self, val: usize) {
-        self.x[10] = val;
-    }
-
-    pub fn set_arg(&mut self, i: usize, val: usize) {
-        self.x[10 + i] = val;
-    }
-
-    pub fn get_arg(&self, i: usize) -> usize {
-        self.x[10 + i]
-    }
+    pub fn set_return_value(&mut self, val: usize) { self.x[10] = val; }
+    pub fn set_arg(&mut self, i: usize, val: usize) { self.x[10 + i] = val; }
+    pub fn get_arg(&self, i: usize) -> usize { self.x[10 + i] }
 }
 
 pub fn init() {
-    extern "C" {
-        fn __alltraps();
-    }
+    extern "C" { fn __alltraps(); }
     unsafe {
         sscratch::write(0);
         stvec::write(__alltraps as usize, TrapMode::Direct);
-        // 开启 S 态定时器中断和外部中断
         sie::set_stimer();
         sie::set_sext();
     }
     log::info!("trap: stvec={:#x}", __alltraps as usize);
 }
 
-/// 用户态陷阱处理（从汇编调用）
 #[no_mangle]
 pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
     let scause = scause::read();
@@ -135,17 +113,13 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
                 scause.cause(), stval, ctx.sepc);
         }
     }
-
-    // 处理信号
     crate::task::handle_signals();
 }
 
-/// 内核态陷阱处理
 #[no_mangle]
 pub extern "C" fn kernel_trap_handler(ctx: &mut TrapContext) {
     let scause = scause::read();
     let stval = stval::read();
-
     match scause.cause() {
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
             crate::timer::handle_timer_interrupt();
@@ -154,10 +128,8 @@ pub extern "C" fn kernel_trap_handler(ctx: &mut TrapContext) {
             crate::drivers::handle_external_interrupt();
         }
         _ => {
-            panic!(
-                "kernel trap: {:?}, stval={:#x}, sepc={:#x}",
-                scause.cause(), stval, ctx.sepc
-            );
+            panic!("kernel trap: {:?}, stval={:#x}, sepc={:#x}",
+                scause.cause(), stval, ctx.sepc);
         }
     }
 }
