@@ -218,6 +218,15 @@ impl MemorySet {
             "kernel_data_in_user",
         ), None);
 
+        // 剩余物理内存（页帧分配器管理的内存，用于 TrapContext 等分配的帧）
+        ms.push(MapArea::new(
+            (ekernel as usize).into(),
+            super::MEMORY_END.into(),
+            MapType::Identical,
+            MapPermission::R | MapPermission::W,
+            "phys_mem_in_user",
+        ), None);
+
         // UART 和其他 MMIO
         ms.push(MapArea::new(
             0x10000000usize.into(),
