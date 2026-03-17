@@ -1,6 +1,7 @@
 use super::address::*;
 use super::frame::{frame_alloc, FrameTracker};
 use alloc::vec::Vec;
+use alloc::vec;
 use bitflags::bitflags;
 
 bitflags! {
