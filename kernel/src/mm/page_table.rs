@@ -6,6 +6,7 @@ use bitflags::bitflags;
 
 bitflags! {
     /// 页表项标志位
+    #[derive(Copy, Clone)]
     pub struct PTEFlags: u8 {
         const V = 1 << 0;  // Valid
         const R = 1 << 1;  // Readable
