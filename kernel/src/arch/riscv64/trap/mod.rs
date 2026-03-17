@@ -127,6 +127,14 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
             if !crate::mm::handle_page_fault(stval, scause.bits()) {
                 log::warn!("Load fault: addr={:#x}, sepc={:#x}, ra={:#x}, sp={:#x}, a0={:#x}, a1={:#x}, a2={:#x}, s0={:#x}",
                     stval, ctx.sepc, ctx.x[1], ctx.x[2], ctx.x[10], ctx.x[11], ctx.x[12], ctx.x[8]);
+                // Read the ngx_cached_err_log_time (s0 = 0x701014f8)
+                let s0 = ctx.x[8];
+                if s0 != 0 {
+                    let tok = crate::task::current_user_token();
+                    let p0 = crate::mm::translated_ref(tok, s0 as *const usize);
+                    let p8 = crate::mm::translated_ref(tok, (s0 + 8) as *const usize);
+                    log::warn!("  *(s0+0)={:#x} (len), *(s0+8)={:#x} (data)", *p0, *p8);
+                }
                 crate::task::current_add_signal(crate::signal::Signal::SIGSEGV);
             }
         }
