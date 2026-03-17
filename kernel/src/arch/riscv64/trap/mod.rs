@@ -96,27 +96,34 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
             ctx.sepc += 4;
             let syscall_id = ctx.syscall_id();
             let args = ctx.syscall_args();
-            log::debug!("syscall: id={}, args={:?}", syscall_id, args);
-            let ret = crate::syscall::syscall(syscall_id, args, ctx);
-            // 记录 syscall 调用（仅最关键的）
+            // 用 SBI 打印 pid=2 的每个 syscall（在执行之前，避免死锁遮掩信息）
             {
                 use core::sync::atomic::{AtomicBool, Ordering};
-                static FORK_HAPPENED: AtomicBool = AtomicBool::new(false);
-                if syscall_id == 220 { FORK_HAPPENED.store(true, Ordering::Relaxed); }
+                static FORK2: AtomicBool = AtomicBool::new(false);
+                if syscall_id == 220 { FORK2.store(true, Ordering::Relaxed); }
                 let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(0);
-                if FORK_HAPPENED.load(Ordering::Relaxed) && pid == 2 {
-                    // fork 之后：记录 pid=2 的所有 syscall
-                    log::warn!("[2]sc{}(a0={:#x} a1={:#x} a2={:#x})={}", syscall_id, args[0], args[1], args[2], ret);
-                }
-                // 记录 sc258 的调用 PC（sepc 已经 +4，需要减去 4）
-                if syscall_id == 258 {
-                    log::error!("sc258 called from sepc={:#x} ra={:#x} a0={:#x} a1={:#x}",
-                        ctx.sepc - 4, ctx.x[1], ctx.x[10], ctx.x[11]);
+                if FORK2.load(Ordering::Relaxed) && pid == 2 {
+                    fn p(c: u8) { crate::arch::sbi::console_putchar(c); }
+                    fn ps(s: &str) { for b in s.bytes() { p(b); } }
+                    fn ph(mut n: u64) {
+                        for i in (0..16).rev() {
+                            let d = ((n >> (i*4)) & 0xf) as u8;
+                            p(if d < 10 { b'0' + d } else { b'a' + d - 10 });
+                        }
+                    }
+                    fn pd(mut n: u64) {
+                        if n == 0 { p(b'0'); return; }
+                        let mut buf = [0u8; 20]; let mut i = 20;
+                        while n > 0 { i -= 1; buf[i] = b'0' + (n % 10) as u8; n /= 10; }
+                        for b in &buf[i..] { p(*b); }
+                    }
+                    ps("[2]sc"); pd(syscall_id as u64);
+                    ps("("); ph(args[0] as u64); ps(","); ph(args[1] as u64); ps(","); ph(args[2] as u64);
+                    ps(")\n");
                 }
             }
-            if syscall_id == 222 || syscall_id == 214 || syscall_id == 226 {
-                log::debug!("syscall {} ret={:#x}", syscall_id, ret as usize);
-            }
+            log::debug!("syscall: id={}, args={:?}", syscall_id, args);
+            let ret = crate::syscall::syscall(syscall_id, args, ctx);
             ctx.set_return_value(ret as usize);
         }
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
