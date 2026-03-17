@@ -106,8 +106,9 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
                 if FORK_HAPPENED.load(Ordering::Relaxed) {
                     let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(0);
                     // 只记录 worker 进程（pid>1）的非频繁 syscall
-                    let is_frequent = matches!(syscall_id, 96 | 113 | 222 | 214 | 215 | 226 | 133 | 98 | 124);
-                    if !is_frequent {
+                    let is_frequent = matches!(syscall_id, 96 | 113 | 222 | 214 | 215 | 226 | 98 | 124);
+                    // 只记录 pid=1 的特殊调用
+                    if pid == 1 || !is_frequent {
                         log::warn!("[pid={}] sc={} ret={}", pid, syscall_id, ret);
                     }
                 }
