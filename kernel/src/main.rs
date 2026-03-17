@@ -42,8 +42,6 @@ pub fn kernel_main(hart_id: usize, dtb_pa: usize) -> ! {
 
         println!("Initializing arch...");
         arch::init();
-        // 在 trap 初始化后激活内核页表
-        mm::activate_kernel_space();
         log::info!("Architecture initialized");
 
         println!("Initializing timer...");
