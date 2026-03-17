@@ -297,10 +297,11 @@ fn setup_initial_fds() -> Vec<Option<Arc<dyn FileDescriptor>>> {
 ///   envp[0], ..., NULL  (envp 数组)
 ///   auxv pairs (type, val) ..., (AT_NULL, 0)
 ///   [字符串数据区]
-fn setup_user_stack(ms: &mut MemorySet, mut sp: usize, argv: &[&str], envp: &[&str]) -> usize {
+fn setup_user_stack(ms: &mut MemorySet, mut sp: usize, argv: &[&str], envp: &[&str],
+    at_base: usize, at_phdr: usize, at_phnum: usize, at_phent: usize, at_entry: usize) -> usize {
     let tok = ms.token();
 
-    // 写一个 64 位整数到用户地址
+    // 写一个 64 位整数到用户地址（sp 向下移动）
     let write_u64 = |sp: &mut usize, val: u64| {
         *sp -= 8;
         let bufs = crate::mm::translated_byte_buffer(tok, *sp as *mut u8, 8);
@@ -323,8 +324,10 @@ fn setup_user_stack(ms: &mut MemorySet, mut sp: usize, argv: &[&str], envp: &[&s
         let mut off = 0;
         for b in bufs {
             let n = b.len().min(bytes.len() - off);
-            b[..n].copy_from_slice(&bytes[off..off + n]);
-            off += n;
+            if n > 0 {
+                b[..n].copy_from_slice(&bytes[off..off + n]);
+                off += n;
+            }
         }
         // 写 null terminator
         let null_bufs = crate::mm::translated_byte_buffer(tok, (*sp + bytes.len()) as *mut u8, 1);
@@ -354,12 +357,12 @@ fn setup_user_stack(ms: &mut MemorySet, mut sp: usize, argv: &[&str], envp: &[&s
     sp &= !15;
     let rand_addr = sp;
     let rand_bufs = crate::mm::translated_byte_buffer(tok, sp as *mut u8, 16);
-    for b in rand_bufs { for byte in b.iter_mut() { *byte = 0x42; } }  // 固定随机数
+    for b in rand_bufs { for byte in b.iter_mut() { *byte = 0x42; } }
 
     // 对齐到 16 字节
     sp &= !15;
 
-    // 步骤2：从高地址向低地址写 auxv（类型+值各 8 字节）
+    // 步骤2：从高地址向低地址写 auxv（先写最后的条目）
     // AT_NULL 结尾
     write_u64(&mut sp, 0);  // AT_NULL value
     write_u64(&mut sp, 0);  // AT_NULL type
@@ -372,21 +375,41 @@ fn setup_user_stack(ms: &mut MemorySet, mut sp: usize, argv: &[&str], envp: &[&s
     write_u64(&mut sp, 4096);
     write_u64(&mut sp, 6);
 
-    // AT_UID (11) = 0
+    // AT_EGID (14) = 0
     write_u64(&mut sp, 0);
-    write_u64(&mut sp, 11);
-
-    // AT_EUID (12) = 0
-    write_u64(&mut sp, 0);
-    write_u64(&mut sp, 12);
+    write_u64(&mut sp, 14);
 
     // AT_GID (13) = 0
     write_u64(&mut sp, 0);
     write_u64(&mut sp, 13);
 
-    // AT_EGID (14) = 0
+    // AT_EUID (12) = 0
     write_u64(&mut sp, 0);
-    write_u64(&mut sp, 14);
+    write_u64(&mut sp, 12);
+
+    // AT_UID (11) = 0
+    write_u64(&mut sp, 0);
+    write_u64(&mut sp, 11);
+
+    // AT_ENTRY (9) - 主程序入口（nginx 的入口，这里先用 ld 的入口）
+    write_u64(&mut sp, at_entry as u64);
+    write_u64(&mut sp, 9);
+
+    // AT_BASE (7) - 动态链接器的加载基址
+    write_u64(&mut sp, at_base as u64);
+    write_u64(&mut sp, 7);
+
+    // AT_PHNUM (5) - 程序头数量
+    write_u64(&mut sp, at_phnum as u64);
+    write_u64(&mut sp, 5);
+
+    // AT_PHENT (4) - 程序头大小
+    write_u64(&mut sp, at_phent as u64);
+    write_u64(&mut sp, 4);
+
+    // AT_PHDR (3) - 程序头地址
+    write_u64(&mut sp, at_phdr as u64);
+    write_u64(&mut sp, 3);
 
     // 步骤3：写 envp 数组（NULL 终止）
     write_u64(&mut sp, 0);  // NULL terminator
