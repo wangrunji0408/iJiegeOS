@@ -126,7 +126,7 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
                 let tick = TICK.fetch_add(1, Ordering::Relaxed);
                 if tick % 1000 == 0 {
                     let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(0);
-                    log::warn!("timer: pid={} sepc={:#x} sp={:#x}", pid, ctx.sepc, ctx.x[2]);
+                    log::error!("timer: pid={} sepc={:#x} sp={:#x}", pid, ctx.sepc, ctx.x[2]);
                 }
             }
             crate::task::suspend_current_and_run_next();
@@ -200,7 +200,7 @@ pub extern "C" fn kernel_trap_handler(ctx: &mut TrapContext) {
                 static KTICK: AtomicU64 = AtomicU64::new(0);
                 let tick = KTICK.fetch_add(1, Ordering::Relaxed);
                 if tick % 500 == 0 {
-                    log::warn!("ktimer: sepc={:#x}", ctx.sepc);
+                    log::error!("ktimer: sepc={:#x}", ctx.sepc);
                 }
             }
         }
