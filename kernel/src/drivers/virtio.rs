@@ -141,9 +141,9 @@ pub fn handle_virtio_interrupt(irq: usize) {
         DeviceType::Network => {
             // 网络设备中断（收到数据包）
             if let Some(ref mut net) = NET_DEVICE.lock().as_mut() {
-                let mut buf = [0u8; 1514];
-                while let Ok(n) = net.receive(&mut buf) {
-                    if n > 0 {
+                while let Ok(rx_buf) = net.receive() {
+                    let pkt = rx_buf.packet();
+                    if !pkt.is_empty() {
                         // 将数据包传递给 smoltcp
                         crate::net::poll();
                     }
