@@ -101,8 +101,8 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
             // 在 fork 后（pid > 1），记录关键 syscall（排除高频调用）
             {
                 let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(0);
-                let is_frequent = matches!(syscall_id, 96 | 113 | 114 | 135 | 133 | 25);
-                if pid > 1 && !is_frequent {
+                let is_frequent = matches!(syscall_id, 96 | 113 | 114 | 25);
+                if !is_frequent {
                     log::warn!("[pid={}] sc={} ret={}", pid, syscall_id, ret);
                 }
             }
