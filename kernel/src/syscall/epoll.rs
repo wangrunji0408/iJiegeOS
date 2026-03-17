@@ -119,7 +119,7 @@ pub fn sys_epoll_ctl(epfd: usize, op: i32, fd: usize, event: *const u8) -> i64 {
                 if let Some(evt) = evt {
                     let events = unsafe { core::ptr::addr_of!(evt.events).read_unaligned() };
                     let data = unsafe { core::ptr::addr_of!(evt.data).read_unaligned() };
-                    log::warn!("eA:{} fd={}", epfd, fd);
+                    log::debug!("eA:{} fd={}", epfd, fd);
                     instance.entries.insert(fd, EpollEntry {
                         fd,
                         events,
@@ -135,7 +135,7 @@ pub fn sys_epoll_ctl(epfd: usize, op: i32, fd: usize, event: *const u8) -> i64 {
                     if let Some(evt) = evt {
                         let events = unsafe { core::ptr::addr_of!(evt.events).read_unaligned() };
                         let data = unsafe { core::ptr::addr_of!(evt.data).read_unaligned() };
-                        log::warn!("eM:{} fd={}", epfd, fd);
+                        log::debug!("eM:{} fd={}", epfd, fd);
                         entry.events = events;
                         entry.data = data;
                     }
