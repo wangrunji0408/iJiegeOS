@@ -144,8 +144,10 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
         }
         Trap::Exception(Exception::InstructionFault)
         | Trap::Exception(Exception::InstructionPageFault) => {
-            log::warn!("Instruction fault: addr={:#x}, sepc={:#x}", stval, ctx.sepc);
-            crate::task::current_add_signal(crate::signal::Signal::SIGSEGV);
+            if !crate::mm::handle_page_fault(stval, scause.bits()) {
+                log::warn!("Instruction fault: addr={:#x}, sepc={:#x}", stval, ctx.sepc);
+                crate::task::current_add_signal(crate::signal::Signal::SIGSEGV);
+            }
         }
         Trap::Exception(Exception::IllegalInstruction) => {
             log::warn!("Illegal instruction: sepc={:#x}", ctx.sepc);
