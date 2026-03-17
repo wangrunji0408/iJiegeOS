@@ -214,7 +214,6 @@ pub extern "C" fn kernel_trap_handler(ctx: &mut TrapContext) {
                     let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(9999);
                     log::error!("ktimer: pid={} sepc={:#x}", pid, ctx.sepc);
                 }
-                }
             }
         }
         Trap::Interrupt(Interrupt::SupervisorExternal) => {
