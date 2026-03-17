@@ -159,7 +159,8 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
                 static FORK2R: AtomicBool = AtomicBool::new(false);
                 if syscall_id == 220 { FORK2R.store(true, Ordering::Relaxed); }
                 let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(0);
-                if FORK2R.load(Ordering::Relaxed) && pid == 2 {
+                let is_net_sc2 = syscall_id >= 198 && syscall_id <= 203;
+                if (FORK2R.load(Ordering::Relaxed) && pid == 2) || (pid == 1 && is_net_sc2) {
                     fn p(c: u8) { crate::arch::sbi::console_putchar(c); }
                     fn ps(s: &str) { for b in s.bytes() { p(b); } }
                     fn ph(mut n: u64) {
