@@ -154,13 +154,66 @@ pub fn sys_futex(uaddr: usize, op: i32, val: u32, timeout: usize, uaddr2: usize,
 }
 
 pub fn sys_eventfd2(initval: u32, flags: i32) -> i64 {
-    // 返回一个简单的 pipe 读端作为 eventfd
-    let (r, w) = crate::fs::create_pipe();
+    let efd = alloc::sync::Arc::new(EventFd::new(initval, flags));
     let task = crate::task::current_task().unwrap();
     let mut inner = task.inner_exclusive_access();
     let fd = inner.alloc_fd();
-    inner.fd_table[fd] = Some(r);
+    inner.fd_table[fd] = Some(efd);
     fd as i64
+}
+
+/// eventfd 实现：内核计数器，支持 read/write/can_read
+struct EventFd {
+    counter: spin::Mutex<u64>,
+    semaphore: bool,  // EFD_SEMAPHORE flag
+}
+
+impl EventFd {
+    fn new(initval: u32, flags: i32) -> Self {
+        Self {
+            counter: spin::Mutex::new(initval as u64),
+            semaphore: flags & 1 != 0,  // EFD_SEMAPHORE = 1
+        }
+    }
+}
+
+impl crate::fs::FileDescriptor for EventFd {
+    fn read(&self, buf: &mut [u8]) -> isize {
+        if buf.len() < 8 { return -22; }  // EINVAL
+        let mut counter = self.counter.lock();
+        if *counter == 0 {
+            return -11;  // EAGAIN
+        }
+        let val = if self.semaphore { 1 } else { *counter };
+        *counter -= val;
+        let bytes = val.to_ne_bytes();
+        buf[..8].copy_from_slice(&bytes);
+        8
+    }
+
+    fn write(&self, buf: &[u8]) -> isize {
+        if buf.len() < 8 { return -22; }  // EINVAL
+        let mut val_bytes = [0u8; 8];
+        val_bytes.copy_from_slice(&buf[..8]);
+        let val = u64::from_ne_bytes(val_bytes);
+        if val == u64::MAX { return -22; }  // EINVAL
+        let mut counter = self.counter.lock();
+        *counter = counter.saturating_add(val);
+        8
+    }
+
+    fn stat(&self) -> crate::fs::FileStat {
+        crate::fs::FileStat { st_mode: 0o20600, ..Default::default() }
+    }
+
+    fn is_readable(&self) -> bool { true }
+    fn is_writable(&self) -> bool { true }
+
+    fn can_read(&self) -> bool {
+        *self.counter.lock() > 0
+    }
+
+    fn can_write(&self) -> bool { true }
 }
 
 pub fn sys_timerfd_create(clockid: i32, flags: i32) -> i64 {
