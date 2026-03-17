@@ -128,8 +128,25 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
                 let tick = TICK.fetch_add(1, Ordering::Relaxed);
                 if tick % 50 == 0 {
                     let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(9999);
-                    log::error!("timer: pid={} sepc={:#x} sp={:#x} a0={:#x} a1={:#x} a2={:#x} ra={:#x}",
-                        pid, ctx.sepc, ctx.x[2], ctx.x[10], ctx.x[11], ctx.x[12], ctx.x[1]);
+                    // 用 SBI 直接输出
+                    fn p(c: u8) { crate::arch::sbi::console_putchar(c); }
+                    fn ps(s: &str) { for b in s.bytes() { p(b); } }
+                    fn ph(mut n: u64) {
+                        p(b'0'); p(b'x');
+                        for i in (0..16).rev() {
+                            let d = ((n >> (i*4)) & 0xf) as u8;
+                            p(if d < 10 { b'0' + d } else { b'a' + d - 10 });
+                        }
+                    }
+                    fn pd(mut n: u64) {
+                        if n == 0 { p(b'0'); return; }
+                        let mut buf = [0u8; 20]; let mut i = 20;
+                        while n > 0 { i -= 1; buf[i] = b'0' + (n % 10) as u8; n /= 10; }
+                        for b in &buf[i..] { p(*b); }
+                    }
+                    ps("T["); pd(tick); ps("]pid="); pd(pid as u64);
+                    ps(" sepc="); ph(ctx.sepc as u64);
+                    ps("\n");
                 }
             }
             crate::task::suspend_current_and_run_next();
