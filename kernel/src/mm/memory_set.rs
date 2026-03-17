@@ -386,8 +386,8 @@ impl MemorySet {
                     }
 
                     let already_mapped = self.page_table.translate(vpn).map(|e| e.is_valid()).unwrap_or(false);
-                    log::error!("cow_fault: addr={:#x} vpn={:#x} ppn={:#x} flags={:?} already={} prot={}",
-                        addr, vpn.0, ppn.0, flags, already_mapped, prot);
+                    log::error!("cow_fault: addr={:#x} vpn={:#x} ppn={:#x} flags={:#x} already={} prot={}",
+                        addr, vpn.0, ppn.0, flags.bits(), already_mapped, prot);
                     if already_mapped {
                         self.page_table.set_flags(vpn, flags);
                     } else {
