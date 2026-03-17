@@ -184,31 +184,47 @@ impl MemorySet {
         // 用户页表中没有内核映射的话，陷阱时无法访问 __alltraps 代码
         extern "C" {
             fn stext();
+            fn etext();
+            fn srodata();
+            fn erodata();
+            fn sdata();
             fn ekernel();
         }
-        // 映射整个内核到用户页表（恒等映射，只读/执行）
-        // 注意：这会共享物理帧，不需要额外分配
-        let kernel_start: usize = 0x80000000;  // 从物理内存起始
-        let kernel_end: usize = super::MEMORY_END;  // 到内存末尾
 
-        // 使用恒等映射，不需要额外分配物理帧
-        // 简化：只映射几个关键区域
-        // 内核代码 (text)
+        // 内核代码段 (text) - 执行权限
         ms.push(MapArea::new(
             (stext as usize).into(),
-            (ekernel as usize).into(),
+            (etext as usize).into(),
             MapType::Identical,
             MapPermission::R | MapPermission::X,
             "kernel_text_in_user",
         ), None);
 
-        // 剩余物理内存（包括内核堆和栈）
+        // 内核只读数据 (rodata)
+        ms.push(MapArea::new(
+            (srodata as usize).into(),
+            (erodata as usize).into(),
+            MapType::Identical,
+            MapPermission::R,
+            "kernel_rodata_in_user",
+        ), None);
+
+        // 内核数据/bss/堆（包含 HEAP_SPACE, KernelStack 等）- 读写权限
+        ms.push(MapArea::new(
+            (sdata as usize).into(),
+            (ekernel as usize).into(),
+            MapType::Identical,
+            MapPermission::R | MapPermission::W,
+            "kernel_data_in_user",
+        ), None);
+
+        // 剩余物理内存（页帧分配器管理的内存）
         ms.push(MapArea::new(
             (ekernel as usize).into(),
             super::MEMORY_END.into(),
             MapType::Identical,
             MapPermission::R | MapPermission::W,
-            "kernel_data_in_user",
+            "phys_mem_in_user",
         ), None);
 
         // UART 和其他 MMIO
