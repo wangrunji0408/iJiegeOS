@@ -83,11 +83,14 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
     let scause = scause::read();
     let stval = stval::read();
 
+    log::debug!("trap: cause={:?}, stval={:#x}, sepc={:#x}", scause.cause(), stval, ctx.sepc);
+
     match scause.cause() {
         Trap::Exception(Exception::UserEnvCall) => {
             ctx.sepc += 4;
             let syscall_id = ctx.syscall_id();
             let args = ctx.syscall_args();
+            log::debug!("syscall: id={}, args={:?}", syscall_id, args);
             let ret = crate::syscall::syscall(syscall_id, args, ctx);
             ctx.set_return_value(ret as usize);
         }
