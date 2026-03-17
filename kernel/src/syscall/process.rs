@@ -229,15 +229,13 @@ pub fn sys_execve(path: *const u8, argv: *const usize, envp: *const usize, ctx: 
     let trap_cx_addr = task.kernel_stack.top() - core::mem::size_of::<TrapContext>();
     let trap_cx = unsafe { &mut *(trap_cx_addr as *mut TrapContext) };
     *trap_cx = TrapContext::new(entry, user_sp);
+    trap_cx.user_satp = inner.memory_set.token();
+    inner.trap_cx_addr = trap_cx_addr;
 
     // 更新调度上下文（使新地址空间生效）
     inner.task_cx = crate::task::context::TaskContext::goto_trap_return(trap_cx_addr);
 
-    // 激活新页表
-    inner.memory_set.activate();
-
-    // 更新 ctx 指向的内存（但 ctx 可能是旧地址空间的）
-    // 实际上 ctx 是 trap_cx 的内核地址，不会受到地址空间切换影响
+    // 更新 ctx 指向的内存
     *ctx = *trap_cx;
 
     0
