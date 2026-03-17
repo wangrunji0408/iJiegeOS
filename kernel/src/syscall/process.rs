@@ -140,7 +140,7 @@ fn fork_task(parent: &Arc<Task>, flags: usize, child_sp: usize, ptid: usize, cti
         state: TaskState::Ready,
         task_cx,
         memory_set,
-        trap_cx_ppn: crate::mm::PhysPageNum(0),  // 不使用这个字段
+        trap_cx_addr,
         parent: Some(Arc::downgrade(parent)),
         children: alloc::vec::Vec::new(),
         exit_code: 0,
