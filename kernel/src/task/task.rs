@@ -126,6 +126,8 @@ impl Task {
         // 创建 TrapContext 并放在内核栈上
         let trap_cx = unsafe { &mut *(trap_cx_addr as *mut TrapContext) };
         *trap_cx = TrapContext::new(entry_point, user_sp);
+        // 设置用户页表 satp，以便 __restore 时切换
+        trap_cx.user_satp = memory_set.token();
 
         // 创建内核任务上下文
         // ra = trap_return，sp 指向 TrapContext 的位置
