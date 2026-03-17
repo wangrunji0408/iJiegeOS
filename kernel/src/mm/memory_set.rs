@@ -247,29 +247,11 @@ impl MemorySet {
     }
 
     pub fn mmap_fixed(&mut self, start: usize, end: usize, prot: usize) {
-        let mut area = MmapArea {
+        let area = MmapArea {
             start, end, prot, flags: 0,
             data_frames: BTreeMap::new(),
             file: None, file_offset: 0,
         };
-        // 立即分配并映射所有页
-        let start_vpn = VirtAddr::from(start).floor();
-        let end_vpn = VirtAddr::from(end).ceil();
-        let mut flags = PTEFlags::V | PTEFlags::A | PTEFlags::D | PTEFlags::U;
-        if prot & 1 != 0 { flags |= PTEFlags::R; }
-        if prot & 2 != 0 { flags |= PTEFlags::W; }
-        if prot & 4 != 0 { flags |= PTEFlags::X; }
-        for vpn in VPNRange::new(start_vpn, end_vpn).into_iter() {
-            if let Some(frame) = frame_alloc() {
-                let ppn = frame.ppn;
-                if self.page_table.translate(vpn).map(|e| e.is_valid()).unwrap_or(false) {
-                    self.page_table.set_flags(vpn, flags);
-                } else {
-                    self.page_table.map(vpn, ppn, flags);
-                }
-                area.data_frames.insert(vpn, frame);
-            }
-        }
         self.mmap_areas.push(area);
     }
 
