@@ -554,5 +554,8 @@ lazy_static! {
 }
 
 pub fn init_kernel_space() {
-    KERNEL_SPACE.lock().activate();
+    // 仅初始化内核空间，不激活页表
+    // 内核使用恒等映射，激活页表在 trap 初始化之后进行
+    let _ = KERNEL_SPACE.lock();
+    log::info!("Kernel space initialized (not activated yet)");
 }
