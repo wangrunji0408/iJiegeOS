@@ -89,6 +89,34 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
     let scause = scause::read();
     let stval = stval::read();
 
+    // 对 pid=2 打印所有非 syscall 的 trap（用 SBI 输出）
+    {
+        use core::sync::atomic::{AtomicBool, Ordering};
+        static P2: AtomicBool = AtomicBool::new(false);
+        if scause.bits() == 8 { /* UserEnvCall=8, 由 syscall 处理已有输出 */ }
+        else {
+            let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(0);
+            if P2.load(Ordering::Relaxed) && pid == 2 {
+                fn p(c: u8) { crate::arch::sbi::console_putchar(c); }
+                fn ps(s: &str) { for b in s.bytes() { p(b); } }
+                fn ph(mut n: u64) {
+                    p(b'0'); p(b'x');
+                    for i in (0..16).rev() {
+                        let d = ((n >> (i*4)) & 0xf) as u8;
+                        p(if d < 10 { b'0' + d } else { b'a' + d - 10 });
+                    }
+                }
+                ps("[2]trap cause="); ph(scause.bits()); ps(" sepc="); ph(ctx.sepc as u64); ps(" stval="); ph(stval as u64); ps("\n");
+            }
+            // 检测 clone（220 的 syscall），但 scause=8 时才是 syscall
+        }
+        // 更新 P2 标志（fork 之后）
+        if scause.bits() == 8 {
+            let sc_id = ctx.x[17]; // a7
+            if sc_id == 220 { P2.store(true, Ordering::Relaxed); }
+        }
+    }
+
     log::debug!("trap: cause={:?}, stval={:#x}, sepc={:#x}", scause.cause(), stval, ctx.sepc);
 
     match scause.cause() {
