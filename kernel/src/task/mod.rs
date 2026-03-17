@@ -4,11 +4,11 @@ pub mod scheduler;
 pub mod pid;
 pub mod context;
 
-pub use task::{Task, TaskState, TaskInner};
+pub use task::{Task, TaskState, TaskInner, KernelStack};
 pub use manager::{add_task, remove_task, get_task, TASK_MANAGER};
 pub use scheduler::{run_first_task, suspend_current_and_run_next, exit_current_and_run_next};
 pub use context::TaskContext;
-pub use pid::{Pid, PidAllocator};
+pub use pid::{Pid, PidAllocator, PID_ALLOCATOR};
 
 use alloc::sync::Arc;
 use spin::Mutex;
