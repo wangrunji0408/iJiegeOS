@@ -77,6 +77,8 @@ pub fn sys_setsid() -> i64 {
 }
 
 pub fn sys_exit(exit_code: i32) -> i64 {
+    let pid = current_task().map(|t| t.pid.0).unwrap_or(-1);
+    log::warn!("[pid={}] exit: code={}", pid, exit_code);
     crate::task::exit_current_and_run_next(exit_code as usize);
     unreachable!()
 }
@@ -87,9 +89,11 @@ pub fn sys_exit_group(exit_code: i32) -> i64 {
 
 pub fn sys_clone(flags: usize, child_sp: usize, ptid: usize, ctid: usize, newtls: usize, ctx: &mut TrapContext) -> i64 {
     let current = current_task().expect("no current task");
+    let parent_pid = current.pid.0;
     let child_task = fork_task(&current, flags, child_sp, ptid, ctid, newtls, ctx);
     let child_pid = child_task.pid.0;
     add_task(Arc::new(child_task));
+    log::warn!("[pid={}] clone: child_pid={}", parent_pid, child_pid);
     child_pid as i64
 }
 
