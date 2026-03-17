@@ -107,8 +107,9 @@ fn probe_device(base: usize) {
                     let mac = net.mac_address();
                     log::info!("VirtIO Net: MAC={:x}:{:x}:{:x}:{:x}:{:x}:{:x}",
                         mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-                    crate::net::setup_interface(mac);
+                    // 先存储设备，再初始化网络接口（setup_interface 需要发送 GARP）
                     *NET_DEVICE.lock() = Some(net);
+                    crate::net::setup_interface(mac);
                 }
                 Err(e) => log::error!("VirtIO Net init failed: {:?}", e),
             }
