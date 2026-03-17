@@ -163,6 +163,8 @@ pub struct MemorySet {
     pub mmap_areas: Vec<MmapArea>,
     pub brk: usize,
     pub brk_start: usize,
+    /// brk 区域分配的物理帧（保持引用避免被释放）
+    pub brk_frames: BTreeMap<VirtPageNum, FrameTracker>,
 }
 
 impl MemorySet {
@@ -173,6 +175,7 @@ impl MemorySet {
             mmap_areas: Vec::new(),
             brk: 0,
             brk_start: 0,
+            brk_frames: BTreeMap::new(),
         }
     }
 
