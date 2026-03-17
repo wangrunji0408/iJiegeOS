@@ -6,9 +6,10 @@ use spin::Mutex;
 
 use crate::arch::trap::{TrapContext, TRAP_CONTEXT_BASE};
 use crate::fs::FileDescriptor;
-use crate::mm::{MemorySet, MapPermission, PhysAddr, VirtAddr, TRAP_CONTEXT_BASE as MM_TRAP_CONTEXT_BASE};
+use crate::mm::{MemorySet, MapPermission, PhysAddr, VirtAddr};
 use crate::signal::Signal;
-use crate::task::{TaskContext, Pid, PID_ALLOCATOR};
+use crate::task::{TaskContext, Pid};
+use crate::task::pid::PID_ALLOCATOR;
 
 /// 任务（进程）状态
 #[derive(Debug, Clone, PartialEq)]
@@ -122,10 +123,6 @@ impl Task {
         *trap_cx = TrapContext::new(
             entry_point,
             user_sp,
-            crate::mm::KERNEL_SPACE.lock().token(),
-            kernel_sp,
-            crate::arch::trap::trap_handler_entry as usize,
-            memory_set.token(),
         );
 
         // 创建内核任务上下文
