@@ -32,18 +32,35 @@ mod loader {
     use alloc::vec::Vec;
 
     pub fn load_init_proc() {
-        // 从文件系统读取 /init 或 /usr/sbin/nginx
-        // 这需要在 fs::init() 之后调用
-        let paths = ["/init", "/usr/sbin/nginx", "/bin/sh"];
-        for path in &paths {
-            if let Some(elf_data) = read_file(path) {
-                crate::println!("Loading init from: {}", path);
-                let task = super::Task::new_from_elf_with_args(&elf_data, path, &[], &[]);
-                super::add_task(alloc::sync::Arc::new(task));
-                return;
-            }
+        // 直接加载 nginx 作为初始进程
+        // nginx 是动态链接的，需要通过 ld-musl 来加载
+        let interp = "/lib/ld-musl-riscv64.so.1";
+        let nginx = "/usr/sbin/nginx";
+
+        // 尝试加载动态链接器（ld-musl）
+        // 由动态链接器来加载 nginx
+        if let Some(elf_data) = read_file(interp) {
+            crate::println!("Loading dynamic linker: {}", interp);
+            let task = super::Task::new_from_elf_with_args(&elf_data, interp,
+                &[interp, nginx, "-g", "daemon off;"],
+                &["PATH=/usr/sbin:/usr/bin:/sbin:/bin",
+                  "HOME=/tmp",
+                  "TMPDIR=/tmp"]);
+            super::add_task(alloc::sync::Arc::new(task));
+            return;
         }
-        panic!("No init binary found! Checked: {:?}", paths);
+
+        // 回退：尝试直接加载 nginx（静态链接情况）
+        if let Some(elf_data) = read_file(nginx) {
+            crate::println!("Loading nginx directly: {}", nginx);
+            let task = super::Task::new_from_elf_with_args(&elf_data, nginx,
+                &[nginx, "-g", "daemon off;"],
+                &[]);
+            super::add_task(alloc::sync::Arc::new(task));
+            return;
+        }
+
+        panic!("Could not find init binary! (tried {} and {})", interp, nginx);
     }
 
     fn read_file(path: &str) -> Option<Vec<u8>> {
