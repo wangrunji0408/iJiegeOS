@@ -118,8 +118,9 @@ pub fn suspend_current_and_run_next() {
         TASK_MANAGER.lock().push_ready(task.clone());
         sbi_puts("S6\n");  // push_ready 完成
 
-        // 找下一个任务
-        if let Some(next_task) = TASK_MANAGER.lock().pop_ready() {
+        // 找下一个任务（先释放 TASK_MANAGER 锁，再进入 if let 体）
+        let next_task = TASK_MANAGER.lock().pop_ready();
+        if let Some(next_task) = next_task {
             sbi_puts("S7\n");  // pop_ready 有结果
             let mut next_inner = next_task.inner_exclusive_access();
             next_inner.state = TaskState::Running;
