@@ -98,16 +98,20 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
             let args = ctx.syscall_args();
             log::debug!("syscall: id={}, args={:?}", syscall_id, args);
             let ret = crate::syscall::syscall(syscall_id, args, ctx);
-            // 只在 FORK_HAPPENED 后记录关键事件（非频繁）
+            // 记录 syscall 调用
             {
                 use core::sync::atomic::{AtomicBool, Ordering};
                 static FORK_HAPPENED: AtomicBool = AtomicBool::new(false);
                 if syscall_id == 220 { FORK_HAPPENED.store(true, Ordering::Relaxed); }
-                if FORK_HAPPENED.load(Ordering::Relaxed) {
-                    let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(0);
-                    // 只记录 worker 进程（pid>1）的非频繁 syscall
-                    // pid=2(worker) 只记录非频繁调用；pid=1 不记录
-                    // 记录 pid=2 accept4 调用
+                let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(0);
+                if !FORK_HAPPENED.load(Ordering::Relaxed) {
+                    // fork 之前：记录 pid=1 的所有 syscall（排除频繁的 read/write/epoll）
+                    let noisy = matches!(syscall_id, 63 | 64 | 22 | 101 | 102 | 260);
+                    if !noisy {
+                        log::warn!("[{}]sc{}({:#x},{:#x})={}", pid, syscall_id, args[0], args[1], ret);
+                    }
+                } else {
+                    // fork 之后：只记录 pid=2 的 accept4
                     let interesting = matches!(syscall_id, 242 | 202);
                     if pid == 2 && interesting {
                         log::warn!("[2]sc{}({:#x})={}", syscall_id, args[0], ret);
