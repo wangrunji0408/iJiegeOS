@@ -88,9 +88,11 @@ pub fn suspend_current_and_run_next() {
             next_inner.state = TaskState::Running;
             let next_cx = &next_inner.task_cx as *const TaskContext;
             let next_pid = next_task.pid.0;
+            let next_sp = next_inner.task_cx.sp;
+            let next_ra = next_inner.task_cx.ra;
             drop(next_inner);
 
-            log::error!("switch: -> pid={}", next_pid);
+            log::error!("switch: -> pid={} sp={:#x} ra={:#x}", next_pid, next_sp, next_ra);
             *CURRENT_TASK.lock() = Some(next_task);
 
             unsafe {
