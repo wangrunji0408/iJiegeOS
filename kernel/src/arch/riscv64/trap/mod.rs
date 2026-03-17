@@ -124,7 +124,7 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
                 use core::sync::atomic::{AtomicU64, Ordering};
                 static TICK: AtomicU64 = AtomicU64::new(0);
                 let tick = TICK.fetch_add(1, Ordering::Relaxed);
-                if tick % 1000 == 0 {
+                if tick % 100 == 0 {
                     let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(0);
                     log::error!("timer: pid={} sepc={:#x} sp={:#x}", pid, ctx.sepc, ctx.x[2]);
                 }
