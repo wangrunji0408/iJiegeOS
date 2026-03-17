@@ -170,10 +170,57 @@ impl Task {
     }
 
     /// 从 ELF 数据创建新进程（带命令行参数）
-    pub fn new_from_elf_with_args(elf_data: &[u8], _path: &str, argv: &[&str], _envp: &[&str]) -> Self {
-        // 简化：暂时忽略参数，直接加载 ELF
-        // TODO: 将参数压入用户栈
-        Self::new_from_elf(elf_data)
+    pub fn new_from_elf_with_args(elf_data: &[u8], _path: &str, argv: &[&str], envp: &[&str]) -> Self {
+        let pid = PID_ALLOCATOR.alloc();
+        let kernel_stack = KernelStack::new();
+
+        // 创建用户地址空间
+        let (mut memory_set, user_sp_top, entry_point) = MemorySet::new_user(elf_data);
+
+        // 在用户栈上设置 argv/envp
+        let user_sp = setup_user_stack(&mut memory_set, user_sp_top, argv, envp);
+
+        // TrapContext 放在内核栈顶部
+        let trap_cx_addr = kernel_stack.trap_cx_addr();
+        let kernel_sp = trap_cx_addr;
+
+        // 创建 TrapContext
+        let trap_cx = unsafe { &mut *(trap_cx_addr as *mut TrapContext) };
+        *trap_cx = TrapContext::new(entry_point, user_sp);
+        // argc 在 a0，argv 在 a1
+        trap_cx.x[10] = argv.len();  // a0 = argc
+        trap_cx.x[11] = user_sp;     // a1 = argv（栈顶就是 argv 数组）
+
+        let task_cx = TaskContext::goto_trap_return(kernel_sp);
+        let fd_table = setup_initial_fds();
+
+        let inner = TaskInner {
+            state: TaskState::Ready,
+            task_cx,
+            memory_set,
+            trap_cx_addr,
+            parent: None,
+            children: Vec::new(),
+            exit_code: 0,
+            pending_signals: Vec::new(),
+            fd_table,
+            cwd: String::from("/"),
+            heap_start: user_sp_top,
+            heap_end: user_sp_top,
+            uid: 0,
+            gid: 0,
+            euid: 0,
+            egid: 0,
+            pgid: pid.0,
+            sid: pid.0,
+            robust_list: 0,
+            clear_child_tid: 0,
+            set_child_tid: 0,
+            rlimits: [RLimit::default(); 16],
+            tid: pid,
+        };
+
+        Task { pid, kernel_stack, inner: Mutex::new(inner) }
     }
 
     pub fn inner_exclusive_access(&self) -> spin::MutexGuard<TaskInner> {
