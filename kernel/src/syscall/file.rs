@@ -412,8 +412,9 @@ pub fn sys_faccessat(dirfd: i32, path: *const u8, mode: i32, flags: i32) -> i64 
 pub fn sys_mkdirat(dirfd: i32, path: *const u8, mode: u32) -> i64 {
     let path_str = user_str(path);
     let abs_path = resolve_path(dirfd, &path_str);
-    // TODO: 通过 VFS 创建目录
-    0
+    log::warn!("mkdirat: path={}", abs_path);
+    let ret = crate::fs::mkdir(&abs_path, mode);
+    if ret < 0 { ENOENT } else { 0 }
 }
 
 pub fn sys_unlinkat(dirfd: i32, path: *const u8, flags: i32) -> i64 {
