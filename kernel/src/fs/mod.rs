@@ -4,7 +4,7 @@ mod tmpfs;
 mod procfs;
 mod devfs;
 mod pipe;
-mod socket;
+pub mod socket;
 
 pub use vfs::{Vfs, VfsNode, VfsFile, FileDescriptor, OpenOptions, DirEntry};
 pub use inode::{Inode, InodeType};
