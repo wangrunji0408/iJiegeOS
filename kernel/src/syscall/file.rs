@@ -73,6 +73,21 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> i64 {
     drop(inner);
 
     let user_buf = translated_byte_buffer(token(), buf, len);
+    // 记录写到文件的内容（调试用）
+    if fd >= 3 && fd <= 7 {
+        let mut content = alloc::vec::Vec::new();
+        for s in user_buf.iter() { content.extend_from_slice(s); }
+        if let Ok(s) = core::str::from_utf8(&content) {
+            log::warn!("sys_write fd={} len={}: {:?}", fd, len, s);
+        }
+        let mut total = 0i64;
+        for slice in content.chunks(512) {
+            let n = file.write(slice);
+            if n < 0 { return n as i64; }
+            total += n as i64;
+        }
+        return total;
+    }
     let mut total = 0i64;
     for slice in user_buf.iter() {
         let n = file.write(slice);
