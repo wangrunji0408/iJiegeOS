@@ -602,12 +602,32 @@ impl MemorySet {
                 flags: mmap.flags,
                 data_frames: BTreeMap::new(),
             };
-            for (vpn, src_frame) in &mmap.data_frames {
-                if let Some(dst_frame) = frame_alloc() {
-                    dst_frame.ppn.get_bytes_array().copy_from_slice(src_frame.ppn.get_bytes_array());
-                    let flags = user_space.page_table.translate(*vpn).unwrap().flags();
-                    memory_set.page_table.map(*vpn, dst_frame.ppn, flags);
-                    new_mmap.data_frames.insert(*vpn, dst_frame);
+            // 遍历该 mmap 区域的所有 VPN，不论是否在 data_frames 里
+            let start_vpn = VirtAddr::from(mmap.start).floor();
+            let end_vpn = VirtAddr::from(mmap.end).ceil();
+            let mut flags_bits = PTEFlags::V | PTEFlags::A | PTEFlags::D | PTEFlags::U;
+            if mmap.prot & 1 != 0 { flags_bits |= PTEFlags::R; }
+            if mmap.prot & 2 != 0 { flags_bits |= PTEFlags::W; }
+            if mmap.prot & 4 != 0 { flags_bits |= PTEFlags::X; }
+            for vpn in VPNRange::new(start_vpn, end_vpn).into_iter() {
+                // 如果父进程中这个 vpn 有映射（可能来自另一个 mmap_area 或 data_frames）
+                if let Some(src_pte) = user_space.page_table.translate(vpn) {
+                    if src_pte.is_valid() {
+                        let src_ppn = src_pte.ppn();
+                        let pte_flags = src_pte.flags();
+                        if let Some(dst_frame) = frame_alloc() {
+                            dst_frame.ppn.get_bytes_array().copy_from_slice(src_ppn.get_bytes_array());
+                            memory_set.page_table.map(vpn, dst_frame.ppn, pte_flags);
+                            new_mmap.data_frames.insert(vpn, dst_frame);
+                        }
+                    }
+                } else if let Some(src_frame) = mmap.data_frames.get(&vpn) {
+                    // fallback: 从 data_frames 复制
+                    if let Some(dst_frame) = frame_alloc() {
+                        dst_frame.ppn.get_bytes_array().copy_from_slice(src_frame.ppn.get_bytes_array());
+                        memory_set.page_table.map(vpn, dst_frame.ppn, flags_bits);
+                        new_mmap.data_frames.insert(vpn, dst_frame);
+                    }
                 }
             }
             memory_set.mmap_areas.push(new_mmap);
