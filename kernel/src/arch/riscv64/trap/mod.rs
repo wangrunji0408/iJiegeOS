@@ -173,6 +173,7 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
             ctx.set_return_value(ret as usize);
         }
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
+            crate::arch::sbi::console_putchar(b'T');  // 无条件 SBI 输出
             crate::timer::handle_timer_interrupt();
             // 定期打印进程状态用于调试
             {
