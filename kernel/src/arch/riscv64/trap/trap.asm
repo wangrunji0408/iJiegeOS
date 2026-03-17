@@ -26,6 +26,20 @@
     .align 2
 
 __alltraps:
+    # 调试：打印 '!' 表示进入了 trap handler
+    # 保存 a0, a1, a7
+    addi sp, sp, -24
+    sd a0, 0(sp)
+    sd a1, 8(sp)
+    sd a7, 16(sp)
+    li a0, 33          # '!'
+    li a7, 1           # SBI_CONSOLE_PUTCHAR (legacy)
+    ecall
+    ld a0, 0(sp)
+    ld a1, 8(sp)
+    ld a7, 16(sp)
+    addi sp, sp, 24
+
     # 检查是否来自用户态
     # 如果 sscratch != 0，说明来自用户态（sscratch = TrapContext 内核地址）
     csrr t0, sscratch
