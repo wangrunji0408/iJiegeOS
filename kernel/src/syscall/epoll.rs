@@ -173,6 +173,7 @@ pub fn sys_epoll_pwait(epfd: usize, events: *mut u8, maxevents: i32, timeout: i3
                     ready |= EPOLLOUT;
                 }
                 if ready != 0 {
+                    log::warn!("epoll_pwait: fd={} events={:#x} ready={:#x} data={:#x}", entry.fd, entry.events, ready, entry.data);
                     ready_events.push(EpollEvent { events: ready, data: entry.data });
                 }
             }
