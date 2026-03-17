@@ -150,6 +150,27 @@ fn smoltcp_now() -> Instant {
     Instant::from_millis(crate::timer::get_time_ms() as i64)
 }
 
+/// 构造一个 Gratuitous ARP 以太网帧
+/// 以太网 ARP Request：dst=ff:ff:ff:ff:ff:ff, src=mac, 目标 IP = 源 IP（自己的 IP）
+fn make_garp_packet(mac: &[u8; 6], ip: &[u8; 4]) -> Vec<u8> {
+    let mut pkt = vec![0u8; 42];
+    // Ethernet header (14 bytes)
+    pkt[0..6].copy_from_slice(&[0xff, 0xff, 0xff, 0xff, 0xff, 0xff]); // dst: broadcast
+    pkt[6..12].copy_from_slice(mac);                                    // src: our MAC
+    pkt[12..14].copy_from_slice(&[0x08, 0x06]);                        // EtherType: ARP
+    // ARP payload (28 bytes)
+    pkt[14..16].copy_from_slice(&[0x00, 0x01]);  // htype: Ethernet
+    pkt[16..18].copy_from_slice(&[0x08, 0x00]);  // ptype: IPv4
+    pkt[18] = 6;                                   // hlen
+    pkt[19] = 4;                                   // plen
+    pkt[20..22].copy_from_slice(&[0x00, 0x01]);  // oper: ARP Request
+    pkt[22..28].copy_from_slice(mac);              // sender MAC
+    pkt[28..32].copy_from_slice(ip);               // sender IP
+    pkt[32..38].copy_from_slice(&[0x00; 6]);       // target MAC (unknown)
+    pkt[38..42].copy_from_slice(ip);               // target IP = sender IP (GARP)
+    pkt
+}
+
 /// 轮询网络接口：读取 VirtIO RX → smoltcp → 写出 VirtIO TX
 pub fn poll() {
     // 从真实 VirtIO 设备接收数据包，推入 smoltcp device rx_buf
