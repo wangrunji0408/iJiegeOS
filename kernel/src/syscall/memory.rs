@@ -20,7 +20,7 @@ pub fn sys_mmap(addr: usize, len: usize, prot: i32, flags: i32, fd: i32, offset:
     let task = current_task().expect("no task");
     let mut inner = task.inner_exclusive_access();
 
-    log::debug!("mmap: addr={:#x}, len={:#x}, prot={}, flags={:#x}, fd={}, offset={}", addr, len, prot, flags, fd, offset);
+    log::error!("mmap: addr={:#x}, len={:#x}, prot={}, flags={:#x}, fd={}, offset={}", addr, len, prot, flags, fd, offset);
 
     // MAP_ANONYMOUS
     if flags & 0x20 != 0 {
