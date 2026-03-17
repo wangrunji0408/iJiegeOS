@@ -211,7 +211,8 @@ pub extern "C" fn kernel_trap_handler(ctx: &mut TrapContext) {
                 static KTICK: AtomicU64 = AtomicU64::new(0);
                 let tick = KTICK.fetch_add(1, Ordering::Relaxed);
                 if tick % 500 == 0 {
-                    log::error!("ktimer: sepc={:#x}", ctx.sepc);
+                    let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(9999);
+                    log::error!("ktimer: pid={} sepc={:#x}", pid, ctx.sepc);
                 }
             }
         }
