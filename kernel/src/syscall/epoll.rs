@@ -135,6 +135,7 @@ pub fn sys_epoll_ctl(epfd: usize, op: i32, fd: usize, event: *const u8) -> i64 {
                     if let Some(evt) = evt {
                         let events = unsafe { core::ptr::addr_of!(evt.events).read_unaligned() };
                         let data = unsafe { core::ptr::addr_of!(evt.data).read_unaligned() };
+                        log::warn!("epoll_ctl MOD: epfd={} fd={} events={:#x}", epfd, fd, events);
                         entry.events = events;
                         entry.data = data;
                     }
