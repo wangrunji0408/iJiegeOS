@@ -269,8 +269,6 @@ impl MemorySet {
             self.munmap(start, end - start);
         }
 
-        log::error!("mmap_anon: [{:#x},{:#x}) prot={}", start, end, prot);
-
         // 懒加载：不立即分配物理内存，page fault 时才分配
         let area = MmapArea {
             start, end, prot, flags: 0,
@@ -446,8 +444,6 @@ impl MemorySet {
         if hint != 0 {
             self.munmap(start, end - start);
         }
-
-        log::error!("mmap_file: [{:#x},{:#x}) prot={} offset={:#x}", start, end, prot, file_offset);
 
         // 不分配物理内存，只注册虚拟地址范围
         let area = MmapArea {
