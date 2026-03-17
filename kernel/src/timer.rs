@@ -7,6 +7,11 @@ pub const CLOCK_FREQ: u64 = 10_000_000;
 pub const TICKS_PER_SEC: u64 = 100;
 pub const TICK_INTERVAL: u64 = CLOCK_FREQ / TICKS_PER_SEC;
 
+/// Unix 时间戳基准偏移（2024-01-01 00:00:00 UTC）
+/// 使 gettimeofday 返回合理的 Unix 时间戳，避免 nginx 等程序
+/// 因时间为 0 而跳过时间初始化（ngx_cached_err_log_time.data 不被设置）
+pub const UNIX_EPOCH_OFFSET: u64 = 1704067200;
+
 /// 全局 tick 计数
 static TICK_COUNT: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
@@ -54,7 +59,7 @@ impl TimeVal {
     pub fn now() -> Self {
         let us = get_time_us();
         Self {
-            tv_sec: us / 1_000_000,
+            tv_sec: UNIX_EPOCH_OFFSET + us / 1_000_000,
             tv_usec: us % 1_000_000,
         }
     }
@@ -71,7 +76,7 @@ impl TimeSpec {
     pub fn now() -> Self {
         let us = get_time_us();
         Self {
-            tv_sec: (us / 1_000_000) as i64,
+            tv_sec: (UNIX_EPOCH_OFFSET + us / 1_000_000) as i64,
             tv_nsec: (us % 1_000_000 * 1000) as i64,
         }
     }
