@@ -29,10 +29,42 @@ pub fn init() {
 }
 
 mod loader {
+    use alloc::vec::Vec;
+
     pub fn load_init_proc() {
-        let init_elf = include_bytes!("../../initrd/init");
-        let task = super::Task::new_from_elf(init_elf);
-        super::add_task(alloc::sync::Arc::new(task));
+        // 从文件系统读取 /init 或 /usr/sbin/nginx
+        // 这需要在 fs::init() 之后调用
+        let paths = ["/init", "/usr/sbin/nginx", "/bin/sh"];
+        for path in &paths {
+            if let Some(elf_data) = read_file(path) {
+                crate::println!("Loading init from: {}", path);
+                let task = super::Task::new_from_elf_with_args(&elf_data, path, &[], &[]);
+                super::add_task(alloc::sync::Arc::new(task));
+                return;
+            }
+        }
+        panic!("No init binary found! Checked: {:?}", paths);
+    }
+
+    fn read_file(path: &str) -> Option<Vec<u8>> {
+        use crate::fs;
+        let file = fs::open(path, 0, 0)?;  // O_RDONLY
+        let stat = file.stat();
+        let size = stat.st_size as usize;
+        if size == 0 { return None; }
+        let mut buf = alloc::vec![0u8; size];
+        let mut offset = 0;
+        while offset < size {
+            let n = file.read(&mut buf[offset..]);
+            if n <= 0 { break; }
+            offset += n as usize;
+        }
+        if offset > 0 {
+            buf.truncate(offset);
+            Some(buf)
+        } else {
+            None
+        }
     }
 }
 
