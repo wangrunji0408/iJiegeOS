@@ -78,7 +78,7 @@ pub fn sys_setsid() -> i64 {
 
 pub fn sys_exit(exit_code: i32) -> i64 {
     let pid = current_task().map(|t| t.pid.0).unwrap_or(-1);
-    log::warn!("[pid={}] exit: code={}", pid, exit_code);
+    log::error!("[pid={}] exit: code={}", pid, exit_code);
     crate::task::exit_current_and_run_next(exit_code as usize);
     unreachable!()
 }
