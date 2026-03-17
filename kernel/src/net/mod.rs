@@ -9,6 +9,7 @@ use smoltcp::{
     phy::{Device, DeviceCapabilities, Medium, RxToken, TxToken},
 };
 use alloc::vec::Vec;
+use alloc::vec;
 use alloc::collections::BTreeMap;
 use spin::Mutex;
 use lazy_static::lazy_static;

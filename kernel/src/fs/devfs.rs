@@ -3,6 +3,7 @@
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use alloc::vec;
 use spin::Mutex;
 use super::{FileDescriptor, FileStat, DirEntry, Vfs};
 

@@ -4,6 +4,7 @@
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use alloc::vec;
 use alloc::format;
 use super::{FileDescriptor, FileStat, DirEntry, Vfs};
 
