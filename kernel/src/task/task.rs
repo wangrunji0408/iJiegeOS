@@ -289,45 +289,51 @@ fn setup_initial_fds() -> Vec<Option<Arc<dyn FileDescriptor>>> {
     table
 }
 
-/// 在用户栈上设置 argv/envp，返回新的用户 sp
-/// 栈布局（从高地址到低地址）：
-///   [字符串数据]
-///   NULL (envp 结束)
-///   envp[n-1] ... envp[0]
-///   NULL (argv 结束)
-///   argv[argc-1] ... argv[0]
+/// 在用户栈上设置 argv/envp/auxv，返回新的用户 sp
+/// Linux ABI 栈布局（低地址在 sp，向高地址是 +）：
 ///   argc
-/// 返回 sp（指向 argc）
+///   argv[0], argv[1], ..., argv[argc-1]
+///   NULL                (argv 结尾)
+///   envp[0], ..., NULL  (envp 数组)
+///   auxv pairs (type, val) ..., (AT_NULL, 0)
+///   [字符串数据区]
 fn setup_user_stack(ms: &mut MemorySet, mut sp: usize, argv: &[&str], envp: &[&str]) -> usize {
     let tok = ms.token();
 
-    // 写入字符串数据并收集指针
-    let write_str = |sp: &mut usize, s: &str| -> usize {
-        let bytes = s.as_bytes();
-        *sp -= bytes.len() + 1;
-        *sp &= !7;
-        let bufs = crate::mm::translated_byte_buffer(tok, *sp as *mut u8, bytes.len() + 1);
+    // 写一个 64 位整数到用户地址
+    let write_u64 = |sp: &mut usize, val: u64| {
+        *sp -= 8;
+        let bufs = crate::mm::translated_byte_buffer(tok, *sp as *mut u8, 8);
+        let bytes = val.to_le_bytes();
         let mut off = 0;
         for b in bufs {
-            let to_copy = b.len().min(bytes.len().saturating_sub(off));
-            if to_copy > 0 {
-                b[..to_copy].copy_from_slice(&bytes[off..off+to_copy]);
-                off += to_copy;
-            }
-            if off >= bytes.len() && b.len() > bytes.len() - (off - to_copy) {
-                let null_pos = bytes.len() - (off - to_copy);
-                if null_pos < b.len() {
-                    b[null_pos] = 0;
-                }
-            }
+            let n = b.len().min(8 - off);
+            b[..n].copy_from_slice(&bytes[off..off + n]);
+            off += n;
+        }
+    };
+
+    // 写字符串到用户地址，返回字符串地址
+    let write_str = |sp: &mut usize, s: &str| -> usize {
+        let bytes = s.as_bytes();
+        let len = bytes.len() + 1;
+        *sp -= len;
+        *sp &= !7;  // 对齐到 8 字节
+        let bufs = crate::mm::translated_byte_buffer(tok, *sp as *mut u8, bytes.len());
+        let mut off = 0;
+        for b in bufs {
+            let n = b.len().min(bytes.len() - off);
+            b[..n].copy_from_slice(&bytes[off..off + n]);
+            off += n;
         }
         // 写 null terminator
-        let null_bufs = crate::mm::translated_byte_buffer(tok, ((*sp + bytes.len()) as *mut u8), 1);
+        let null_bufs = crate::mm::translated_byte_buffer(tok, (*sp + bytes.len()) as *mut u8, 1);
         for b in null_bufs { b[0] = 0; }
         *sp
     };
 
-    // 先写所有环境变量字符串
+    // 步骤1：写所有字符串（从高地址向低地址）
+    // 环境变量字符串
     let mut env_ptrs: Vec<usize> = Vec::new();
     for &e in envp.iter().rev() {
         let ptr = write_str(&mut sp, e);
@@ -335,7 +341,7 @@ fn setup_user_stack(ms: &mut MemorySet, mut sp: usize, argv: &[&str], envp: &[&s
     }
     env_ptrs.reverse();
 
-    // 写所有参数字符串
+    // 参数字符串
     let mut arg_ptrs: Vec<usize> = Vec::new();
     for &a in argv.iter().rev() {
         let ptr = write_str(&mut sp, a);
@@ -343,53 +349,59 @@ fn setup_user_stack(ms: &mut MemorySet, mut sp: usize, argv: &[&str], envp: &[&s
     }
     arg_ptrs.reverse();
 
+    // 写 16 字节随机数（AT_RANDOM 用）
+    sp -= 16;
+    sp &= !15;
+    let rand_addr = sp;
+    let rand_bufs = crate::mm::translated_byte_buffer(tok, sp as *mut u8, 16);
+    for b in rand_bufs { for byte in b.iter_mut() { *byte = 0x42; } }  // 固定随机数
+
     // 对齐到 16 字节
     sp &= !15;
 
-    // 写 envp NULL 和指针数组
-    sp -= 8;  // NULL terminator for envp
-    let null_bufs = crate::mm::translated_byte_buffer(tok, sp as *mut u8, 8);
-    for b in null_bufs { for byte in b.iter_mut() { *byte = 0; } }
+    // 步骤2：从高地址向低地址写 auxv（类型+值各 8 字节）
+    // AT_NULL 结尾
+    write_u64(&mut sp, 0);  // AT_NULL value
+    write_u64(&mut sp, 0);  // AT_NULL type
 
+    // AT_RANDOM (25)
+    write_u64(&mut sp, rand_addr as u64);
+    write_u64(&mut sp, 25);
+
+    // AT_PAGESZ (6) = 4096
+    write_u64(&mut sp, 4096);
+    write_u64(&mut sp, 6);
+
+    // AT_UID (11) = 0
+    write_u64(&mut sp, 0);
+    write_u64(&mut sp, 11);
+
+    // AT_EUID (12) = 0
+    write_u64(&mut sp, 0);
+    write_u64(&mut sp, 12);
+
+    // AT_GID (13) = 0
+    write_u64(&mut sp, 0);
+    write_u64(&mut sp, 13);
+
+    // AT_EGID (14) = 0
+    write_u64(&mut sp, 0);
+    write_u64(&mut sp, 14);
+
+    // 步骤3：写 envp 数组（NULL 终止）
+    write_u64(&mut sp, 0);  // NULL terminator
     for &ptr in env_ptrs.iter().rev() {
-        sp -= 8;
-        let bufs = crate::mm::translated_byte_buffer(tok, sp as *mut u8, 8);
-        let ptr_bytes = (ptr as u64).to_le_bytes();
-        let mut off = 0;
-        for b in bufs {
-            let to_copy = b.len().min(8 - off);
-            b[..to_copy].copy_from_slice(&ptr_bytes[off..off+to_copy]);
-            off += to_copy;
-        }
+        write_u64(&mut sp, ptr as u64);
     }
 
-    // 写 argv NULL 和指针数组
-    sp -= 8;  // NULL terminator for argv
-    let null_bufs = crate::mm::translated_byte_buffer(tok, sp as *mut u8, 8);
-    for b in null_bufs { for byte in b.iter_mut() { *byte = 0; } }
-
+    // 步骤4：写 argv 数组（NULL 终止）
+    write_u64(&mut sp, 0);  // NULL terminator
     for &ptr in arg_ptrs.iter().rev() {
-        sp -= 8;
-        let bufs = crate::mm::translated_byte_buffer(tok, sp as *mut u8, 8);
-        let ptr_bytes = (ptr as u64).to_le_bytes();
-        let mut off = 0;
-        for b in bufs {
-            let to_copy = b.len().min(8 - off);
-            b[..to_copy].copy_from_slice(&ptr_bytes[off..off+to_copy]);
-            off += to_copy;
-        }
+        write_u64(&mut sp, ptr as u64);
     }
 
-    // 写 argc
-    sp -= 8;
-    let bufs = crate::mm::translated_byte_buffer(tok, sp as *mut u8, 8);
-    let argc_bytes = (argv.len() as u64).to_le_bytes();
-    let mut off = 0;
-    for b in bufs {
-        let to_copy = b.len().min(8 - off);
-        b[..to_copy].copy_from_slice(&argc_bytes[off..off+to_copy]);
-        off += to_copy;
-    }
+    // 步骤5：写 argc
+    write_u64(&mut sp, argv.len() as u64);
 
     sp
 }
