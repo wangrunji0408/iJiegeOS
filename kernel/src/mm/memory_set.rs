@@ -427,7 +427,7 @@ impl MemorySet {
 
     /// 从 ELF 创建用户地址空间
     pub fn new_user(elf_data: &[u8]) -> (Self, usize, usize) {
-        let mut memory_set = Self::new_bare();
+        let mut memory_set = Self::new_user_bare();  // 包含内核映射
         crate::loader::load_elf(&mut memory_set, elf_data)
     }
 
