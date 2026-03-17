@@ -1,6 +1,7 @@
 mod virtio;
 
 pub use virtio::init_virtio;
+pub use virtio::{net_receive_packet, net_send_packet};
 
 use spin::Mutex;
 
