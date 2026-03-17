@@ -317,6 +317,7 @@ impl Vfs for TmpFs {
 pub struct TmpFile {
     path: String,
     fs: Arc<usize>,  // *const TmpFs as usize
+    ino: u64,
     data: Mutex<Vec<u8>>,
     offset: Mutex<u64>,
     writable: bool,
