@@ -124,6 +124,24 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
             }
             log::debug!("syscall: id={}, args={:?}", syscall_id, args);
             let ret = crate::syscall::syscall(syscall_id, args, ctx);
+            // 打印 pid=2 的 syscall 返回值
+            {
+                use core::sync::atomic::{AtomicBool, Ordering};
+                static FORK2R: AtomicBool = AtomicBool::new(false);
+                if syscall_id == 220 { FORK2R.store(true, Ordering::Relaxed); }
+                let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(0);
+                if FORK2R.load(Ordering::Relaxed) && pid == 2 {
+                    fn p(c: u8) { crate::arch::sbi::console_putchar(c); }
+                    fn ps(s: &str) { for b in s.bytes() { p(b); } }
+                    fn ph(mut n: u64) {
+                        for i in (0..16).rev() {
+                            let d = ((n >> (i*4)) & 0xf) as u8;
+                            p(if d < 10 { b'0' + d } else { b'a' + d - 10 });
+                        }
+                    }
+                    ps("=["); ph(ret as u64); ps("]\n");
+                }
+            }
             ctx.set_return_value(ret as usize);
         }
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
