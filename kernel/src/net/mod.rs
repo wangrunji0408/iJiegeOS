@@ -285,6 +285,13 @@ pub fn socket_recv(sock: &Socket, buf: &mut [u8], flags: i32) -> isize {
     poll();
 
     let inner = sock.inner.lock();
+    // 如果有 smoltcp handle，从 smoltcp 读
+    if let Some(raw_handle) = inner.handle {
+        let handle: SocketHandle = unsafe { core::mem::transmute(raw_handle) };
+        drop(inner);
+        return tcp_recv(handle, buf);
+    }
+
     if inner.recv_buf.is_empty() {
         if inner.nonblock { return -11; }  // EAGAIN
         return 0;
@@ -301,12 +308,24 @@ pub fn socket_recv(sock: &Socket, buf: &mut [u8], flags: i32) -> isize {
 
 /// Socket send（由 FileDescriptor::write 调用）
 pub fn socket_send(sock: &Socket, buf: &[u8], flags: i32) -> isize {
-    let mut inner = sock.inner.lock();
-    if !inner.connected { return -111; }  // ECONNREFUSED
-    for &b in buf {
-        inner.send_buf.push_back(b);
+    let inner = sock.inner.lock();
+    // 如果有 smoltcp handle，通过 smoltcp 发送
+    if let Some(raw_handle) = inner.handle {
+        let handle: SocketHandle = unsafe { core::mem::transmute(raw_handle) };
+        drop(inner);
+        let n = tcp_send(handle, buf);
+        if n > 0 { poll(); }
+        return n;
     }
+
+    if !inner.connected { return -111; }  // ECONNREFUSED
     drop(inner);
+
+    let mut inner2 = sock.inner.lock();
+    for &b in buf {
+        inner2.send_buf.push_back(b);
+    }
+    drop(inner2);
     poll();
     buf.len() as isize
 }
