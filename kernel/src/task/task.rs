@@ -184,6 +184,7 @@ impl Task {
 
         // 在用户栈上设置 argv/envp
         let user_sp = setup_user_stack(&mut memory_set, user_sp_top, argv, envp);
+        log::info!("user_sp_top={:#x}, user_sp={:#x}", user_sp_top, user_sp);
 
         // TrapContext 放在内核栈顶部
         let trap_cx_addr = kernel_stack.trap_cx_addr();
