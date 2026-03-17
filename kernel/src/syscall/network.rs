@@ -115,13 +115,14 @@ pub fn sys_accept(fd: usize, addr: *mut u8, addrlen: *mut u32) -> i64 {
     crate::net::poll();
 
     // 检查是否有待接受的连接
-    if let Some(_handle) = crate::net::tcp_accept(port) {
+    if let Some(handle) = crate::net::tcp_accept(port) {
         // 创建新的 connected socket（关联 smoltcp handle）
         let new_socket = Arc::new(Socket::new(socket.inner.lock().domain, socket.inner.lock().sock_type, 0));
         {
             let mut inner = new_socket.inner.lock();
             inner.connected = true;
-            inner.handle = Some(_handle.into());
+            // 用 unsafe 把 SocketHandle(usize) 当 usize 存储
+            inner.handle = Some(unsafe { core::mem::transmute::<_, usize>(handle) });
         }
         let task = current_task().unwrap();
         let mut inner = task.inner_exclusive_access();
@@ -139,12 +140,12 @@ pub fn sys_accept(fd: usize, addr: *mut u8, addrlen: *mut u32) -> i64 {
         crate::task::suspend_current_and_run_next();
         crate::net::poll();
 
-        if let Some(_handle) = crate::net::tcp_accept(port) {
+        if let Some(handle) = crate::net::tcp_accept(port) {
             let new_socket = Arc::new(Socket::new(socket.inner.lock().domain, socket.inner.lock().sock_type, 0));
             {
                 let mut inner = new_socket.inner.lock();
                 inner.connected = true;
-                inner.handle = Some(_handle.into());
+                inner.handle = Some(unsafe { core::mem::transmute::<_, usize>(handle) });
             }
             let task = current_task().unwrap();
             let mut inner = task.inner_exclusive_access();
