@@ -94,6 +94,13 @@ pub fn sys_listen(fd: usize, backlog: i32) -> i64 {
 }
 
 pub fn sys_accept(fd: usize, addr: *mut u8, addrlen: *mut u32) -> i64 {
+    sys_accept4(fd, addr, addrlen, 0)
+}
+
+pub fn sys_accept4(fd: usize, addr: *mut u8, addrlen: *mut u32, flags: i32) -> i64 {
+    const SOCK_NONBLOCK: i32 = 0x800;
+    let new_nonblock = (flags & SOCK_NONBLOCK) != 0;
+
     let task = current_task().unwrap();
     let inner = task.inner_exclusive_access();
     let file = match inner.get_fd(fd) {
@@ -118,23 +125,32 @@ pub fn sys_accept(fd: usize, addr: *mut u8, addrlen: *mut u32) -> i64 {
     crate::net::poll();
 
     // 检查是否有待接受的连接
-    if let Some(handle) = crate::net::tcp_accept(port) {
-        // 创建新的 connected socket（关联 smoltcp handle）
-        let new_socket = Arc::new(Socket::new(socket.inner.lock().domain, socket.inner.lock().sock_type, 0));
+    let make_socket = |handle| {
+        let (domain, sock_type) = {
+            let inner = socket.inner.lock();
+            (inner.domain, inner.sock_type)
+        };
+        let new_socket = Arc::new(Socket::new(domain, sock_type, 0));
         {
             let mut inner = new_socket.inner.lock();
             inner.connected = true;
-            // 用 unsafe 把 SocketHandle(usize) 当 usize 存储
+            inner.nonblock = new_nonblock;
             inner.handle = Some(unsafe { core::mem::transmute::<_, usize>(handle) });
         }
+        new_socket
+    };
+
+    if let Some(handle) = crate::net::tcp_accept(port) {
+        let new_socket = make_socket(handle);
         let task = current_task().unwrap();
         let mut inner = task.inner_exclusive_access();
         let new_fd = inner.alloc_fd();
         inner.fd_table[new_fd] = Some(new_socket);
+        log::warn!("accept4: fd={} -> new_fd={} nonblock={}", fd, new_fd, new_nonblock);
         return new_fd as i64;
     }
 
-    if nonblock {
+    if nonblock || new_nonblock {
         return EAGAIN;
     }
 
@@ -144,16 +160,12 @@ pub fn sys_accept(fd: usize, addr: *mut u8, addrlen: *mut u32) -> i64 {
         crate::net::poll();
 
         if let Some(handle) = crate::net::tcp_accept(port) {
-            let new_socket = Arc::new(Socket::new(socket.inner.lock().domain, socket.inner.lock().sock_type, 0));
-            {
-                let mut inner = new_socket.inner.lock();
-                inner.connected = true;
-                inner.handle = Some(unsafe { core::mem::transmute::<_, usize>(handle) });
-            }
+            let new_socket = make_socket(handle);
             let task = current_task().unwrap();
             let mut inner = task.inner_exclusive_access();
             let new_fd = inner.alloc_fd();
             inner.fd_table[new_fd] = Some(new_socket);
+            log::warn!("accept4: fd={} -> new_fd={} nonblock={}", fd, new_fd, new_nonblock);
             return new_fd as i64;
         }
     }
