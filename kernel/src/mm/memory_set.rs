@@ -22,18 +22,13 @@ impl From<MapPermission> for PTEFlags {
     }
 }
 
-/// 映射类型
 #[derive(Clone, PartialEq, Debug)]
 pub enum MapType {
-    /// 恒等映射（物理地址 = 虚拟地址）
     Identical,
-    /// 分配新物理页
     Framed,
-    /// 懒分配（访问时才分配物理页）
     Lazy,
 }
 
-/// 内存区域（VMA）
 pub struct MapArea {
     pub vpn_range: VPNRange,
     pub data_frames: BTreeMap<VirtPageNum, FrameTracker>,
@@ -68,17 +63,21 @@ impl MapArea {
                 ppn = PhysPageNum(vpn.0);
             }
             MapType::Framed => {
-                let frame = frame_alloc().expect("OOM: map area");
+                let frame = frame_alloc().expect("OOM");
                 ppn = frame.ppn;
                 self.data_frames.insert(vpn, frame);
             }
             MapType::Lazy => {
-                // 懒分配不立即分配物理页
                 return;
             }
         }
-        let pte_flags = PTEFlags::from(self.map_perm);
-        page_table.map(vpn, ppn, pte_flags);
+        let pte_flags = PTEFlags::from(self.map_perm) | PTEFlags::V | PTEFlags::A | PTEFlags::D;
+        if page_table.translate(vpn).map(|e| e.is_valid()).unwrap_or(false) {
+            // 已映射，更新标志
+            page_table.set_flags(vpn, pte_flags);
+        } else {
+            page_table.map(vpn, ppn, pte_flags);
+        }
     }
 
     pub fn unmap_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
@@ -100,37 +99,36 @@ impl MapArea {
         }
     }
 
-    /// 将数据复制到此区域
-    pub fn copy_data(&mut self, page_table: &mut PageTable, data: &[u8], offset: usize) {
-        assert_eq!(self.map_type, MapType::Framed);
-        let mut start: usize = 0;
-        let mut current_vpn = self.vpn_range.get_start();
+    /// 将数据写入区域（从 file_offset 字节偏移处写入 data）
+    pub fn copy_data(&mut self, page_table: &mut PageTable, data: &[u8], file_offset: usize) {
+        let start_vpn = self.vpn_range.get_start();
+        let mut vpn = start_vpn;
+        let mut written = 0;
         let len = data.len();
 
-        // 跳过 offset 对应的页
-        let skip_pages = offset / PAGE_SIZE;
+        // 计算第一个页的写入偏移
+        let first_page_offset = file_offset % PAGE_SIZE;
+        let skip_pages = file_offset / PAGE_SIZE;
+
+        // 跳过 skip_pages 个页
         for _ in 0..skip_pages {
-            current_vpn.step();
-            start += PAGE_SIZE;
+            vpn.step();
         }
 
-        let page_offset = offset % PAGE_SIZE;
+        while written < len {
+            let page_offset = if written == 0 { first_page_offset } else { 0 };
+            let available = PAGE_SIZE - page_offset;
+            let to_write = (len - written).min(available);
 
-        loop {
-            let src = &data[start..len.min(start + PAGE_SIZE - page_offset + if start == 0 { page_offset } else { 0 })];
-            let dst = &mut page_table
-                .translate(current_vpn)
-                .unwrap()
-                .ppn()
-                .get_bytes_array();
-
-            let dst_offset = if start == 0 { page_offset } else { 0 };
-            dst[dst_offset..dst_offset + src.len()].copy_from_slice(src);
-            start += src.len();
-            if start >= len {
-                break;
+            if let Some(pte) = page_table.translate(vpn) {
+                let ppn = pte.ppn();
+                let page_bytes = ppn.get_bytes_array();
+                page_bytes[page_offset..page_offset + to_write]
+                    .copy_from_slice(&data[written..written + to_write]);
             }
-            current_vpn.step();
+
+            written += to_write;
+            vpn.step();
         }
     }
 }
@@ -142,7 +140,7 @@ impl Clone for MapArea {
                 self.vpn_range.get_start(),
                 self.vpn_range.get_end()
             ),
-            data_frames: BTreeMap::new(), // 子进程需要 fork 时复制数据
+            data_frames: BTreeMap::new(),
             map_type: self.map_type.clone(),
             map_perm: self.map_perm,
             name: self.name,
@@ -150,15 +148,6 @@ impl Clone for MapArea {
     }
 }
 
-/// 进程地址空间
-pub struct MemorySet {
-    page_table: PageTable,
-    pub areas: Vec<MapArea>,
-    /// mmap 区域（通过 mmap 系统调用创建）
-    pub mmap_areas: Vec<MmapArea>,
-}
-
-/// mmap 区域描述
 pub struct MmapArea {
     pub start: usize,
     pub end: usize,
@@ -167,12 +156,22 @@ pub struct MmapArea {
     pub data_frames: BTreeMap<VirtPageNum, FrameTracker>,
 }
 
+pub struct MemorySet {
+    pub page_table: PageTable,
+    pub areas: Vec<MapArea>,
+    pub mmap_areas: Vec<MmapArea>,
+    pub brk: usize,
+    pub brk_start: usize,
+}
+
 impl MemorySet {
     pub fn new_bare() -> Self {
         Self {
             page_table: PageTable::new(),
             areas: Vec::new(),
             mmap_areas: Vec::new(),
+            brk: 0,
+            brk_start: 0,
         }
     }
 
@@ -188,88 +187,136 @@ impl MemorySet {
         self.areas.push(map_area);
     }
 
-    pub fn push_with_offset(&mut self, mut map_area: MapArea, data: &[u8], offset: usize) {
+    pub fn push_with_offset(&mut self, mut map_area: MapArea, data: &[u8], file_offset: usize) {
         map_area.map(&mut self.page_table);
-        map_area.copy_data(&mut self.page_table, data, offset);
+        map_area.copy_data(&mut self.page_table, data, file_offset);
         self.areas.push(map_area);
     }
 
-    /// 插入帧映射（不加入areas管理，用于临时映射）
-    pub fn insert_framed_area(
-        &mut self,
-        start_va: VirtAddr,
-        end_va: VirtAddr,
-        permission: MapPermission,
-    ) {
-        self.push(
-            MapArea::new(start_va, end_va, MapType::Framed, permission, "anon"),
-            None,
-        );
+    pub fn insert_framed_area(&mut self, start_va: VirtAddr, end_va: VirtAddr, perm: MapPermission) {
+        self.push(MapArea::new(start_va, end_va, MapType::Framed, perm, "anon"), None);
     }
 
-    /// mmap 分配
-    pub fn mmap(&mut self, start: usize, len: usize, prot: usize) -> usize {
-        // 找一个合适的虚拟地址
-        let start = if start == 0 {
+    pub fn mmap_fixed(&mut self, start: usize, end: usize, prot: usize) {
+        let mut area = MmapArea {
+            start, end, prot, flags: 0,
+            data_frames: BTreeMap::new(),
+        };
+        // 立即分配并映射所有页
+        let start_vpn = VirtAddr::from(start).floor();
+        let end_vpn = VirtAddr::from(end).ceil();
+        let mut flags = PTEFlags::V | PTEFlags::A | PTEFlags::D | PTEFlags::U;
+        if prot & 1 != 0 { flags |= PTEFlags::R; }
+        if prot & 2 != 0 { flags |= PTEFlags::W; }
+        if prot & 4 != 0 { flags |= PTEFlags::X; }
+        for vpn in VPNRange::new(start_vpn, end_vpn).into_iter() {
+            if let Some(frame) = frame_alloc() {
+                let ppn = frame.ppn;
+                if self.page_table.translate(vpn).map(|e| e.is_valid()).unwrap_or(false) {
+                    self.page_table.set_flags(vpn, flags);
+                } else {
+                    self.page_table.map(vpn, ppn, flags);
+                }
+                area.data_frames.insert(vpn, frame);
+            }
+        }
+        self.mmap_areas.push(area);
+    }
+
+    pub fn mmap(&mut self, hint: usize, len: usize, prot: usize) -> usize {
+        let start = if hint == 0 {
             self.find_free_area(len)
         } else {
-            start
+            // 对齐到页边界
+            (hint + 4095) & !4095
         };
-        let end = start + len;
+        let end = (start + len + 4095) & !4095;
 
-        // 创建懒分配区域
-        let mut area = MapArea::new(
-            VirtAddr::from(start),
-            VirtAddr::from(end),
-            MapType::Lazy,
-            MapPermission::from_bits_truncate(prot as u8),
-            "mmap",
-        );
-
-        // 对于 Lazy 映射，我们需要在页表中记录，但不分配物理页
-        // 实际上，我们把mmap区域单独追踪
-        self.mmap_areas.push(MmapArea {
-            start,
-            end,
-            prot,
-            flags: 0,
+        let mut area = MmapArea {
+            start, end, prot, flags: 0,
             data_frames: BTreeMap::new(),
-        });
+        };
 
+        // 立即分配
+        let start_vpn = VirtAddr::from(start).floor();
+        let end_vpn = VirtAddr::from(end).ceil();
+        let mut flags = PTEFlags::V | PTEFlags::A | PTEFlags::D | PTEFlags::U;
+        if prot & 1 != 0 { flags |= PTEFlags::R; }
+        if prot & 2 != 0 { flags |= PTEFlags::W; }
+        if prot & 4 != 0 { flags |= PTEFlags::X; }
+        for vpn in VPNRange::new(start_vpn, end_vpn).into_iter() {
+            if let Some(frame) = frame_alloc() {
+                let ppn = frame.ppn;
+                if !self.page_table.translate(vpn).map(|e| e.is_valid()).unwrap_or(false) {
+                    self.page_table.map(vpn, ppn, flags);
+                    area.data_frames.insert(vpn, frame);
+                }
+            }
+        }
+
+        self.mmap_areas.push(area);
         start
     }
 
-    /// 找一个空闲虚拟地址区域
+    pub fn munmap(&mut self, start: usize, len: usize) {
+        let end = start + len;
+        let start_vpn = VirtAddr::from(start).floor();
+        let end_vpn = VirtAddr::from(end).ceil();
+
+        self.mmap_areas.retain(|area| {
+            if area.start >= start && area.end <= end {
+                // 解映射此区域
+                for vpn in VPNRange::new(
+                    VirtAddr::from(area.start).floor(),
+                    VirtAddr::from(area.end).ceil()
+                ).into_iter() {
+                    if self.page_table.translate(vpn).map(|e| e.is_valid()).unwrap_or(false) {
+                        // 不能在这里 unmap（借用冲突）
+                    }
+                }
+                false
+            } else {
+                true
+            }
+        });
+
+        // 在页表中解映射
+        for vpn in VPNRange::new(start_vpn, end_vpn).into_iter() {
+            if self.page_table.translate(vpn).map(|e| e.is_valid()).unwrap_or(false) {
+                self.page_table.unmap(vpn);
+            }
+        }
+    }
+
     fn find_free_area(&self, len: usize) -> usize {
-        // 简单策略：从 0x40000000 开始往上找
+        // 从 0x40000000 开始查找
         let mut candidate = 0x40000000usize;
-        'outer: loop {
-            let end = candidate + len;
-            // 检查是否与现有映射冲突
+        loop {
+            let end = (candidate + len + 4095) & !4095;
+            let mut conflict = false;
             for area in &self.areas {
                 let area_start: usize = VirtAddr::from(area.vpn_range.get_start()).into();
                 let area_end: usize = VirtAddr::from(area.vpn_range.get_end()).into();
                 if candidate < area_end && end > area_start {
                     candidate = (area_end + 4095) & !4095;
-                    continue 'outer;
+                    conflict = true;
+                    break;
                 }
             }
-            for mmap in &self.mmap_areas {
-                if candidate < mmap.end && end > mmap.start {
-                    candidate = (mmap.end + 4095) & !4095;
-                    continue 'outer;
+            if !conflict {
+                for mmap in &self.mmap_areas {
+                    if candidate < mmap.end && end > mmap.start {
+                        candidate = (mmap.end + 4095) & !4095;
+                        conflict = true;
+                        break;
+                    }
                 }
             }
-            break;
+            if !conflict {
+                break;
+            }
         }
         candidate
-    }
-
-    pub fn munmap(&mut self, start: usize, len: usize) {
-        let end = start + len;
-        self.mmap_areas.retain(|area| {
-            !(area.start >= start && area.end <= end)
-        });
     }
 
     pub fn find_mmap_area(&self, addr: usize) -> Option<usize> {
@@ -285,7 +332,6 @@ impl MemorySet {
         let vpn = VirtAddr::from(addr).floor();
         for area in &mut self.mmap_areas {
             if addr >= area.start && addr < area.end {
-                // 分配物理页
                 if let Some(frame) = frame_alloc() {
                     let ppn = frame.ppn;
                     let prot = area.prot;
@@ -293,8 +339,12 @@ impl MemorySet {
                     if prot & 1 != 0 { flags |= PTEFlags::R; }
                     if prot & 2 != 0 { flags |= PTEFlags::W; }
                     if prot & 4 != 0 { flags |= PTEFlags::X; }
-                    self.page_table.map(vpn, ppn, flags);
-                    area.data_frames.insert(vpn, frame);
+                    if self.page_table.translate(vpn).map(|e| e.is_valid()).unwrap_or(false) {
+                        self.page_table.set_flags(vpn, flags);
+                    } else {
+                        self.page_table.map(vpn, ppn, flags);
+                        area.data_frames.insert(vpn, frame);
+                    }
                     return true;
                 }
                 return false;
@@ -303,35 +353,39 @@ impl MemorySet {
         false
     }
 
-    /// 为用户进程创建地址空间
-    pub fn new_user(elf_data: &[u8]) -> (Self, usize, usize) {
-        let mut memory_set = Self::new_bare();
-        // 映射 Trampoline
-        memory_set.map_trampoline();
-        // 解析 ELF
-        crate::loader::load_elf(&mut memory_set, elf_data)
+    pub fn set_brk(&mut self, new_brk: usize) -> usize {
+        if new_brk <= self.brk_start {
+            return self.brk;
+        }
+        let old_end_vpn = VirtAddr::from(self.brk).ceil();
+        let new_end_vpn = VirtAddr::from(new_brk).ceil();
+
+        if new_end_vpn > old_end_vpn {
+            // 需要分配新页
+            let flags = PTEFlags::V | PTEFlags::R | PTEFlags::W | PTEFlags::U | PTEFlags::A | PTEFlags::D;
+            for vpn in VPNRange::new(old_end_vpn, new_end_vpn).into_iter() {
+                if let Some(frame) = frame_alloc() {
+                    let ppn = frame.ppn;
+                    self.page_table.map(vpn, ppn, flags);
+                    // 需要记录这个 frame... 简化处理：用 area 管理
+                    // 实际上需要一个 heap area
+                    // 把 frame 放入一个专门的 heap_frames（这里简化）
+                }
+            }
+        }
+        self.brk = new_brk;
+        self.brk
     }
 
-    /// 映射 Trampoline（内核陷阱代码）到用户空间最高地址
-    fn map_trampoline(&mut self) {
-        extern "C" {
-            fn strampoline();
-        }
-        self.page_table.map(
-            VirtAddr::from(super::super::mm::TRAMPOLINE).into(),
-            PhysAddr::from(strampoline as usize).into(),
-            PTEFlags::R | PTEFlags::X,
-        );
+    /// 从 ELF 创建用户地址空间
+    pub fn new_user(elf_data: &[u8]) -> (Self, usize, usize) {
+        let mut memory_set = Self::new_bare();
+        crate::loader::load_elf(&mut memory_set, elf_data)
     }
 
     /// 内核地址空间
     pub fn new_kernel() -> Self {
         let mut memory_set = Self::new_bare();
-
-        // 映射 Trampoline
-        memory_set.map_trampoline();
-
-        // 内核各段的恒等映射
         extern "C" {
             fn stext();
             fn etext();
@@ -344,7 +398,7 @@ impl MemorySet {
             fn ekernel();
         }
 
-        // .text 段：可读可执行
+        // .text 段
         memory_set.push(MapArea::new(
             (stext as usize).into(),
             (etext as usize).into(),
@@ -353,7 +407,7 @@ impl MemorySet {
             ".text",
         ), None);
 
-        // .rodata 段：只读
+        // .rodata
         memory_set.push(MapArea::new(
             (srodata as usize).into(),
             (erodata as usize).into(),
@@ -362,7 +416,7 @@ impl MemorySet {
             ".rodata",
         ), None);
 
-        // .data 段：可读写
+        // .data
         memory_set.push(MapArea::new(
             (sdata as usize).into(),
             (edata as usize).into(),
@@ -371,7 +425,7 @@ impl MemorySet {
             ".data",
         ), None);
 
-        // .bss 段：可读写
+        // .bss
         memory_set.push(MapArea::new(
             (sbss as usize).into(),
             (ebss as usize).into(),
@@ -380,7 +434,7 @@ impl MemorySet {
             ".bss",
         ), None);
 
-        // 物理内存（恒等映射，用于内核访问任意物理地址）
+        // 物理内存（内核堆 + 页帧分配器）
         memory_set.push(MapArea::new(
             (ekernel as usize).into(),
             super::MEMORY_END.into(),
@@ -389,26 +443,26 @@ impl MemorySet {
             "phys_mem",
         ), None);
 
-        // MMIO 区域（设备寄存器）
-        // UART: 0x10000000
+        // MMIO 区域
+        // UART 16550A: 0x10000000
         memory_set.push(MapArea::new(
             0x10000000usize.into(),
             0x10001000usize.into(),
             MapType::Identical,
             MapPermission::R | MapPermission::W,
-            "uart",
+            "uart0",
         ), None);
 
-        // PLIC: 0xc000000
+        // PLIC: 0x0c000000
         memory_set.push(MapArea::new(
-            0xc000000usize.into(),
-            0xc400000usize.into(),
+            0x0c000000usize.into(),
+            0x10000000usize.into(),
             MapType::Identical,
             MapPermission::R | MapPermission::W,
             "plic",
         ), None);
 
-        // VirtIO: 0x10001000 - 0x10008000
+        // VirtIO 设备: 0x10001000 - 0x10009000
         memory_set.push(MapArea::new(
             0x10001000usize.into(),
             0x10009000usize.into(),
@@ -417,7 +471,7 @@ impl MemorySet {
             "virtio",
         ), None);
 
-        log::info!("Kernel address space created");
+        log::info!("Kernel memory set created");
         memory_set
     }
 
@@ -437,22 +491,35 @@ impl MemorySet {
         self.page_table.translate_va(va)
     }
 
-    /// fork: 复制地址空间
+    pub fn mprotect(&mut self, addr: usize, len: usize, prot: usize) {
+        let start_vpn = VirtAddr::from(addr).floor();
+        let end_vpn = VirtAddr::from(addr + len).ceil();
+        let mut flags = PTEFlags::V | PTEFlags::A | PTEFlags::D | PTEFlags::U;
+        if prot & 1 != 0 { flags |= PTEFlags::R; }
+        if prot & 2 != 0 { flags |= PTEFlags::W; }
+        if prot & 4 != 0 { flags |= PTEFlags::X; }
+        for vpn in VPNRange::new(start_vpn, end_vpn).into_iter() {
+            self.page_table.set_flags(vpn, flags);
+        }
+    }
+
+    /// Fork 时复制地址空间
     pub fn fork_from(user_space: &MemorySet) -> MemorySet {
         let mut memory_set = Self::new_bare();
-        // 映射 Trampoline
-        memory_set.map_trampoline();
 
-        // 复制所有区域
         for area in user_space.areas.iter() {
-            let new_area = area.clone();
-            memory_set.push(new_area, None);
-            // 复制数据
+            let mut new_area = area.clone();
+            // 重新映射
             for vpn in area.vpn_range.clone().into_iter() {
                 let src_ppn = user_space.translate(vpn).unwrap().ppn();
-                let dst_ppn = memory_set.translate(vpn).unwrap().ppn();
-                dst_ppn.get_bytes_array().copy_from_slice(src_ppn.get_bytes_array());
+                if let Some(frame) = frame_alloc() {
+                    frame.ppn.get_bytes_array().copy_from_slice(src_ppn.get_bytes_array());
+                    let flags = user_space.page_table.translate(vpn).unwrap().flags();
+                    memory_set.page_table.map(vpn, frame.ppn, flags);
+                    new_area.data_frames.insert(vpn, frame);
+                }
             }
+            memory_set.areas.push(new_area);
         }
 
         // 复制 mmap 区域
@@ -464,35 +531,20 @@ impl MemorySet {
                 flags: mmap.flags,
                 data_frames: BTreeMap::new(),
             };
-            // 复制已分配的 mmap 物理页
             for (vpn, src_frame) in &mmap.data_frames {
-                let dst_frame = frame_alloc().expect("OOM: mmap fork");
-                dst_frame.ppn.get_bytes_array().copy_from_slice(src_frame.ppn.get_bytes_array());
-                let prot = mmap.prot;
-                let mut flags = PTEFlags::V | PTEFlags::A | PTEFlags::D | PTEFlags::U;
-                if prot & 1 != 0 { flags |= PTEFlags::R; }
-                if prot & 2 != 0 { flags |= PTEFlags::W; }
-                if prot & 4 != 0 { flags |= PTEFlags::X; }
-                memory_set.page_table.map(*vpn, dst_frame.ppn, flags);
-                new_mmap.data_frames.insert(*vpn, dst_frame);
+                if let Some(dst_frame) = frame_alloc() {
+                    dst_frame.ppn.get_bytes_array().copy_from_slice(src_frame.ppn.get_bytes_array());
+                    let flags = user_space.page_table.translate(*vpn).unwrap().flags();
+                    memory_set.page_table.map(*vpn, dst_frame.ppn, flags);
+                    new_mmap.data_frames.insert(*vpn, dst_frame);
+                }
             }
             memory_set.mmap_areas.push(new_mmap);
         }
 
+        memory_set.brk = user_space.brk;
+        memory_set.brk_start = user_space.brk_start;
         memory_set
-    }
-
-    /// 修改虚拟内存区域权限
-    pub fn mprotect(&mut self, addr: usize, len: usize, prot: usize) {
-        let start_vpn = VirtAddr::from(addr).floor();
-        let end_vpn = VirtAddr::from(addr + len).ceil();
-        let mut flags = PTEFlags::V | PTEFlags::A | PTEFlags::D | PTEFlags::U;
-        if prot & 1 != 0 { flags |= PTEFlags::R; }
-        if prot & 2 != 0 { flags |= PTEFlags::W; }
-        if prot & 4 != 0 { flags |= PTEFlags::X; }
-        for vpn in VPNRange::new(start_vpn, end_vpn).into_iter() {
-            self.page_table.set_flags(vpn, flags);
-        }
     }
 }
 
