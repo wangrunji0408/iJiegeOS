@@ -418,11 +418,7 @@ impl MemorySet {
                     if let Some(ref file) = area.file {
                         let page_offset = (vpn.0 << 12) - area.start;
                         let file_off = area.file_offset + page_offset;
-                        // 直接写入物理帧
-                        let dst: &mut [u8] = unsafe {
-                            let phys_addr: usize = ppn.0 << 12;
-                            core::slice::from_raw_parts_mut(phys_addr as *mut u8, 4096)
-                        };
+                        let dst = ppn.get_bytes_array();
                         dst.fill(0);
                         file.read_at(file_off as u64, dst);
                     }
