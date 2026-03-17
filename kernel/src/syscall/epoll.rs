@@ -183,6 +183,7 @@ pub fn sys_epoll_pwait(epfd: usize, events: *mut u8, maxevents: i32, timeout: i3
     drop(inner);
 
     if ready_events.is_empty() && timeout == 0 {
+        log::warn!("epoll_pwait: timeout=0, no events, returning 0");
         return 0;
     }
 
@@ -215,6 +216,7 @@ pub fn sys_epoll_pwait(epfd: usize, events: *mut u8, maxevents: i32, timeout: i3
     }
 
     let n = ready_events.len().min(maxevents as usize);
+    log::warn!("epoll_pwait: returning {} events", n);
     let event_size = core::mem::size_of::<EpollEvent>();
     let bufs = translated_byte_buffer(tok, events, n * event_size);
     let mut off = 0;
