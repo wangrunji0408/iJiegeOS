@@ -122,6 +122,7 @@ pub fn sys_fstat(fd: usize, stat: *mut FileStat) -> i64 {
     drop(inner);
 
     let file_stat = file.stat();
+    log::warn!("sys_fstat fd={} -> mode={:#o} size={} ino={}", fd, file_stat.st_mode, file_stat.st_size, file_stat.st_ino);
     let user_stat = translated_refmut(token(), stat);
     *user_stat = file_stat;
     0
