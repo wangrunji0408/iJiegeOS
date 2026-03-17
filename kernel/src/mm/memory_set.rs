@@ -606,3 +606,9 @@ pub fn init_kernel_space() {
     let _ = KERNEL_SPACE.lock();
     log::info!("Kernel space initialized (not activated yet)");
 }
+
+pub fn activate_kernel_space() {
+    // 激活内核页表（在 trap 初始化之后调用）
+    KERNEL_SPACE.lock().activate();
+    log::info!("Kernel page table activated");
+}

@@ -8,6 +8,7 @@ pub use address::{PhysAddr, VirtAddr, PhysPageNum, VirtPageNum, StepByOne, VPNRa
 pub use frame::{frame_alloc, frame_dealloc, FrameTracker};
 pub use page_table::{PageTable, PTEFlags, PageTableEntry, translated_byte_buffer, translated_str, translated_refmut, translated_ref};
 pub use memory_set::{MemorySet, MapArea, MapType, MapPermission, MmapArea, KERNEL_SPACE};
+pub use memory_set::activate_kernel_space;
 
 /// 物理内存范围（QEMU virt machine 128MB from 0x80000000）
 pub const MEMORY_START: usize = 0x80000000;
