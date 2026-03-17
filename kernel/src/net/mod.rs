@@ -175,15 +175,26 @@ fn make_garp_packet(mac: &[u8; 6], ip: &[u8; 4]) -> Vec<u8> {
 pub fn poll() {
     // 从真实 VirtIO 设备接收数据包，推入 smoltcp device rx_buf
     let mut rx_count = 0;
-    while let Some(pkt) = crate::drivers::net_receive_packet() {
+    loop {
+        let pkt = crate::drivers::net_receive_packet();
+        if pkt.is_none() { break; }
+        let pkt = pkt.unwrap();
         rx_count += 1;
         let mut guard = NET_IFACE.lock();
         if let Some(ref mut state) = guard.as_mut() {
+            log::warn!("net: RX {} bytes", pkt.len());
             state.device.push_rx(pkt);
         }
     }
-    if rx_count > 0 {
-        log::warn!("net::poll: got {} rx packets", rx_count);
+    if rx_count == 0 {
+        // Try to see if can_recv is working
+        let can = {
+            let dev = crate::drivers::NET_DEVICE.lock();
+            dev.as_ref().map(|d| d.can_recv()).unwrap_or(false)
+        };
+        if can {
+            log::warn!("net: can_recv=true but receive() returned None!");
+        }
     }
 
     // 运行 smoltcp 网络栈
