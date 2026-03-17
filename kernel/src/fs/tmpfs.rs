@@ -141,6 +141,7 @@ impl Vfs for TmpFs {
                 Some(Arc::new(TmpFile {
                     path: path_str,
                     fs: Arc::clone(&Arc::new(self as *const TmpFs as usize)),
+                    ino: file_data.ino,
                     data: Mutex::new(file_data.data),
                     offset: Mutex::new(0),
                     writable: opts.write,
