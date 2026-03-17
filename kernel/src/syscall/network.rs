@@ -74,9 +74,18 @@ pub fn sys_listen(fd: usize, backlog: i32) -> i64 {
     };
     drop(inner);
 
-    // 设置监听状态
+    // 设置监听状态，并在 smoltcp 中开始监听
     if let Some(socket) = file.as_socket() {
-        socket.inner.lock().listening = true;
+        let port = {
+            let inner = socket.inner.lock();
+            inner.listening = false;  // 不用这个标志
+            inner.local_addr.as_ref().map(|a| a.port)
+        };
+        // 在 smoltcp 中监听
+        if let Some(port) = port {
+            crate::net::tcp_listen(port);
+            socket.inner.lock().listening = true;
+        }
     }
     0
 }
@@ -91,42 +100,59 @@ pub fn sys_accept(fd: usize, addr: *mut u8, addrlen: *mut u32) -> i64 {
     let nonblock = file.is_nonblock();
     drop(inner);
 
-    // 从 smoltcp 接受连接
-    // 简化版本：使用内部缓冲
     let socket = match file.as_socket() {
         Some(s) => s,
         None => return ENOTSOCK,
     };
 
-    // 尝试从网络接受连接
+    let port = socket.inner.lock().local_addr.as_ref().map(|a| a.port);
+    let port = match port {
+        Some(p) => p,
+        None => return EINVAL,
+    };
+
+    // 轮询网络，看是否有新连接
     crate::net::poll();
 
-    // 如果没有待处理的连接
+    // 检查是否有待接受的连接
+    if let Some(_handle) = crate::net::tcp_accept(port) {
+        // 创建新的 connected socket（关联 smoltcp handle）
+        let new_socket = Arc::new(Socket::new(socket.inner.lock().domain, socket.inner.lock().sock_type, 0));
+        {
+            let mut inner = new_socket.inner.lock();
+            inner.connected = true;
+            inner.handle = Some(_handle.into());
+        }
+        let task = current_task().unwrap();
+        let mut inner = task.inner_exclusive_access();
+        let new_fd = inner.alloc_fd();
+        inner.fd_table[new_fd] = Some(new_socket);
+        return new_fd as i64;
+    }
+
     if nonblock {
         return EAGAIN;
     }
 
-    // 阻塞等待（让出CPU）
+    // 阻塞等待连接
     loop {
-        crate::net::poll();
         crate::task::suspend_current_and_run_next();
+        crate::net::poll();
 
-        let inner_guard = socket.inner.lock();
-        if !inner_guard.recv_buf.is_empty() {
-            break;
+        if let Some(_handle) = crate::net::tcp_accept(port) {
+            let new_socket = Arc::new(Socket::new(socket.inner.lock().domain, socket.inner.lock().sock_type, 0));
+            {
+                let mut inner = new_socket.inner.lock();
+                inner.connected = true;
+                inner.handle = Some(_handle.into());
+            }
+            let task = current_task().unwrap();
+            let mut inner = task.inner_exclusive_access();
+            let new_fd = inner.alloc_fd();
+            inner.fd_table[new_fd] = Some(new_socket);
+            return new_fd as i64;
         }
-        drop(inner_guard);
     }
-
-    // 创建新 socket
-    let new_socket = Arc::new(Socket::new(socket.inner.lock().domain, socket.inner.lock().sock_type, 0));
-    new_socket.inner.lock().connected = true;
-
-    let task = current_task().unwrap();
-    let mut inner = task.inner_exclusive_access();
-    let new_fd = inner.alloc_fd();
-    inner.fd_table[new_fd] = Some(new_socket);
-    new_fd as i64
 }
 
 pub fn sys_connect(fd: usize, addr: *const u8, addrlen: u32) -> i64 {
