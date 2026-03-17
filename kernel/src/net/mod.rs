@@ -183,7 +183,7 @@ pub fn poll() {
         }
     }
     if rx_count > 0 {
-        log::debug!("net::poll: received {} packets from VirtIO", rx_count);
+        log::warn!("net::poll: got {} rx packets", rx_count);
     }
 
     // 运行 smoltcp 网络栈
