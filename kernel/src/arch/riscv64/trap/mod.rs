@@ -111,8 +111,8 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
                 }
 
                 if FORK_HAPPENED.load(Ordering::Relaxed) {
-                    // 排除极高频的调用
-                    let is_frequent = matches!(syscall_id, 96 | 113 | 114 | 25 | 134 | 222 | 214 | 215 | 226 | 135);
+                    // 只过滤极高频的 clock_gettime、fcntl、sigprocmask、rt_sigaction
+                    let is_frequent = matches!(syscall_id, 96 | 113 | 114 | 25 | 134 | 135);
                     if !is_frequent {
                         log::warn!("[pid={}] sc={} ret={}", pid, syscall_id, ret);
                     }
