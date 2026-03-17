@@ -143,8 +143,10 @@ pub fn sys_futex(uaddr: usize, op: i32, val: u32, timeout: usize, uaddr2: usize,
             if current != val {
                 return EAGAIN;
             }
+            log::error!("futex_wait: uaddr={:#x} val={} -- suspending", uaddr, val);
             // 让出 CPU，返回 EINTR 让 musl 认为被信号中断而不是无限重试
             crate::task::suspend_current_and_run_next();
+            log::error!("futex_wait: resumed, returning EINTR");
             EINTR
         }
         1 => {  // FUTEX_WAKE
