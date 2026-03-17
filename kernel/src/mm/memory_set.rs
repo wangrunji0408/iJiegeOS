@@ -155,6 +155,9 @@ pub struct MmapArea {
     pub prot: usize,
     pub flags: usize,
     pub data_frames: BTreeMap<VirtPageNum, FrameTracker>,
+    /// 文件映射：文件引用和起始偏移（按需加载）
+    pub file: Option<alloc::sync::Arc<dyn crate::fs::FileDescriptor>>,
+    pub file_offset: usize,
 }
 
 pub struct MemorySet {
