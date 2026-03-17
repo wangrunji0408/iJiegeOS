@@ -191,20 +191,20 @@ pub fn poll() {
                 tcp_sock.is_active() && tcp_sock.may_recv()
             };
             if is_connected {
-                // 此连接已建立，移到 pending_accepts
-                state.tcp_listeners.remove(&port);
-                state.pending_accepts.entry(port).or_default().push_back(handle);
-                // 创建新的监听 socket 继续监听
-                let mut new_tcp = tcp::Socket::new(
-                    tcp::SocketBuffer::new(vec![0u8; 65536]),
-                    tcp::SocketBuffer::new(vec![0u8; 65536]),
-                );
-                if new_tcp.listen(port).is_ok() {
-                    let new_handle = state.sockets.add(new_tcp);
-                    state.tcp_listeners.insert(port, new_handle);
-                    log::debug!("net: new connection on port {}, created new listener", port);
+                    // 此连接已建立，移到 pending_accepts
+                    state.tcp_listeners.remove(&port);
+                    state.pending_accepts.entry(port).or_default().push_back(handle);
+                    // 创建新的监听 socket 继续监听
+                    let mut new_tcp = tcp::Socket::new(
+                        tcp::SocketBuffer::new(vec![0u8; 65536]),
+                        tcp::SocketBuffer::new(vec![0u8; 65536]),
+                    );
+                    if new_tcp.listen(port).is_ok() {
+                        let new_handle = state.sockets.add(new_tcp);
+                        state.tcp_listeners.insert(port, new_handle);
+                        log::warn!("net: new connection on port {}, created new listener", port);
+                    }
                 }
-            }
         }
     }
 }
