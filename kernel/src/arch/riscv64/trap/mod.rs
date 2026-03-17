@@ -232,3 +232,40 @@ pub extern "C" fn debug_before_sret(trap_cx: &TrapContext) {
             count, pid, trap_cx.sepc, trap_cx.x[2], trap_cx.user_satp, trap_cx.sstatus);
     }
 }
+
+/// 在 __restore 开始处的调试钩子（从汇编调用，直接用 SBI 输出）
+#[no_mangle]
+pub extern "C" fn sbi_debug_restore(trap_cx: &TrapContext) {
+    use core::sync::atomic::{AtomicU64, Ordering};
+    static RESTORE_COUNT: AtomicU64 = AtomicU64::new(0);
+    let count = RESTORE_COUNT.fetch_add(1, Ordering::Relaxed);
+    if count < 30 {
+        let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(9999);
+        // 使用 SBI 直接输出，避免 Mutex 死锁
+        fn putchar(c: u8) { crate::arch::sbi::console_putchar(c); }
+        fn print_str(s: &str) { for b in s.bytes() { putchar(b); } }
+        fn print_hex(mut n: u64) {
+            putchar(b'0'); putchar(b'x');
+            for i in (0..16).rev() {
+                let d = ((n >> (i*4)) & 0xf) as u8;
+                putchar(if d < 10 { b'0' + d } else { b'a' + d - 10 });
+            }
+        }
+        fn print_dec(mut n: u64) {
+            if n == 0 { putchar(b'0'); return; }
+            let mut buf = [0u8; 20];
+            let mut i = 20;
+            while n > 0 { i -= 1; buf[i] = b'0' + (n % 10) as u8; n /= 10; }
+            for b in &buf[i..] { putchar(*b); }
+        }
+        print_str("R[");
+        print_dec(count);
+        print_str("]:pid=");
+        print_dec(pid as u64);
+        print_str(" sepc=");
+        print_hex(trap_cx.sepc as u64);
+        print_str(" satp=");
+        print_hex(trap_cx.user_satp as u64);
+        print_str("\n");
+    }
+}

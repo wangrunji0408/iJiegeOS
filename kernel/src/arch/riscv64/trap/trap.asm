@@ -106,6 +106,11 @@ __alltraps:
     sret
 
 __restore:
+    # 调试：进入 __restore 的标记（直接调用 SBI putchar）
+    # 先把关键寄存器保存，用 a0 调用 sbi_debug_restore
+    mv a0, sp
+    call sbi_debug_restore
+
     # 此时 sp 指向 TrapContext（内核栈上）
     # 恢复 sepc 和 sstatus
     ld t0, 264(sp)   # sepc
