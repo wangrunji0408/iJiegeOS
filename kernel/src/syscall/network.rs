@@ -299,12 +299,13 @@ pub fn sys_getsockopt(fd: usize, level: i32, optname: i32, optval: *mut u8, optl
     drop(inner);
 
     let val: i32 = match (level, optname) {
-        log::warn!("getsockopt:fd={} l={} opt={} -> {}", fd, level, optname, val);
+        (1, 30) => listening as i32,  // SOL_SOCKET, SO_ACCEPTCONN
         (1, 4) => {  // SOL_SOCKET, SO_ERROR
             0
         }
         _ => 0,
     };
+    log::warn!("gs:{}({},{})={}", fd, level, optname, val);
 
     *translated_refmut(tok, optval as *mut i32) = val;
     *translated_refmut(tok, optlen) = 4u32;
