@@ -10,6 +10,8 @@ SECTIONS {
     stext = .;
     .text : {
         *(.text.entry)
+        strampoline = .;
+        *(.text.trampoline)
         *(.text .text.*)
     }
     . = ALIGN(4K);
@@ -41,6 +43,12 @@ SECTIONS {
     ebss = .;
 
     ekernel = .;
+
+    .initrd : {
+        _initrd_start = .;
+        *(.initrd)
+        _initrd_end = .;
+    }
 
     /DISCARD/ : {
         *(.eh_frame)
