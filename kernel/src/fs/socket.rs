@@ -89,4 +89,23 @@ impl FileDescriptor for Socket {
     fn is_nonblock(&self) -> bool {
         self.inner.lock().nonblock
     }
+
+    fn ioctl(&self, request: u64, arg: usize) -> isize {
+        const FIONBIO: u64 = 0x5421;
+        const FIONREAD: u64 = 0x541b;
+        match request {
+            FIONBIO => {
+                // arg is pointer to int; non-zero = set nonblock
+                let val = unsafe { *(arg as *const i32) };
+                self.inner.lock().nonblock = val != 0;
+                0
+            }
+            FIONREAD => {
+                let n = self.inner.lock().recv_buf.len();
+                unsafe { *(arg as *mut i32) = n as i32; }
+                0
+            }
+            _ => 0,
+        }
+    }
 }
