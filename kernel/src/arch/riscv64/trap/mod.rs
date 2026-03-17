@@ -210,7 +210,7 @@ pub extern "C" fn kernel_trap_handler(ctx: &mut TrapContext) {
                 use core::sync::atomic::{AtomicU64, Ordering};
                 static KTICK: AtomicU64 = AtomicU64::new(0);
                 let tick = KTICK.fetch_add(1, Ordering::Relaxed);
-                if tick % 50 == 0 {
+                if tick % 10 == 0 {
                     let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(9999);
                     log::error!("ktimer: pid={} sepc={:#x}", pid, ctx.sepc);
                 }
