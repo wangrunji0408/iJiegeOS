@@ -176,6 +176,11 @@ impl Task {
         Self::new_from_elf(elf_data)
     }
 
+    pub fn inner_exclusive_access(&self) -> spin::MutexGuard<TaskInner> {
+        self.inner.lock()
+    }
+}
+
 impl TaskInner {
     pub fn get_trap_cx(&self) -> &'static mut TrapContext {
         unsafe { &mut *(self.trap_cx_addr as *mut TrapContext) }
