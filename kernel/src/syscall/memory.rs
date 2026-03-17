@@ -20,13 +20,13 @@ pub fn sys_mmap(addr: usize, len: usize, prot: i32, flags: i32, fd: i32, offset:
     let task = current_task().expect("no task");
     let mut inner = task.inner_exclusive_access();
 
-    log::warn!("mmap: addr={:#x}, len={:#x}, prot={}, flags={:#x}, fd={}, offset={}", addr, len, prot, flags, fd, offset);
+    log::debug!("mmap: addr={:#x}, len={:#x}, prot={}, flags={:#x}, fd={}, offset={}", addr, len, prot, flags, fd, offset);
 
     // MAP_ANONYMOUS
     if flags & 0x20 != 0 {
         // 匿名映射
         let start = inner.memory_set.mmap(addr, len, prot as usize);
-        log::warn!("mmap anon: addr={:#x} → start={:#x}, end={:#x}", addr, start, (start + len + 4095) & !4095);
+        log::debug!("mmap anon: addr={:#x} → start={:#x}, end={:#x}", addr, start, (start + len + 4095) & !4095);
         return start as i64;
     }
 
@@ -44,13 +44,13 @@ pub fn sys_mmap(addr: usize, len: usize, prot: i32, flags: i32, fd: i32, offset:
     if offset as usize >= file_size {
         // 映射超出文件，只分配匿名内存
         let start = inner.memory_set.mmap(addr, len, prot as usize);
-        log::warn!("mmap file (empty): addr={:#x} → start={:#x}", addr, start);
+        log::debug!("mmap file (empty): addr={:#x} → start={:#x}", addr, start);
         return start as i64;
     }
     let read_len = (file_size - offset as usize).min(len);
 
     let start = inner.memory_set.mmap(addr, len, prot as usize);
-    log::warn!("mmap file: addr={:#x} → start={:#x}, end={:#x}, file_size={}, read_len={}", addr, start, (start + len + 4095) & !4095, file_size, read_len);
+    log::debug!("mmap file: addr={:#x} → start={:#x}, end={:#x}, file_size={}, read_len={}", addr, start, (start + len + 4095) & !4095, file_size, read_len);
 
     if read_len > 0 {
         let mut data = alloc::vec![0u8; read_len];
