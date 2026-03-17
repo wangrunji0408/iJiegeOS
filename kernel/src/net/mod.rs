@@ -313,17 +313,13 @@ pub fn tcp_recv(handle: SocketHandle, buf: &mut [u8]) -> isize {
     let mut guard = NET_IFACE.lock();
     if let Some(ref mut state) = guard.as_mut() {
         let tcp_sock = state.sockets.get_mut::<tcp::Socket>(handle);
-        log::warn!("tcp_recv: state={:?} can_recv={}", tcp_sock.state(), tcp_sock.can_recv());
         if tcp_sock.can_recv() {
             match tcp_sock.recv_slice(buf) {
                 Ok(n) => {
                     log::warn!("tcp_recv: got {} bytes", n);
                     n as isize
                 }
-                Err(e) => {
-                    log::warn!("tcp_recv: error {:?}", e);
-                    -1
-                }
+                Err(_) => -1,
             }
         } else if tcp_sock.is_active() || tcp_sock.may_recv() {
             -11  // EAGAIN：连接仍活跃但暂无数据
