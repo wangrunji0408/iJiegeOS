@@ -90,6 +90,8 @@ impl FileDescriptor for Socket {
         self.inner.lock().nonblock
     }
 
+    fn as_socket(&self) -> Option<&Socket> { Some(self) }
+
     fn ioctl(&self, request: u64, arg: usize) -> isize {
         const FIONBIO: u64 = 0x5421;
         const FIONREAD: u64 = 0x541b;
