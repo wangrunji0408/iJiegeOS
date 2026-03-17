@@ -98,22 +98,16 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
             let args = ctx.syscall_args();
             log::debug!("syscall: id={}, args={:?}", syscall_id, args);
             let ret = crate::syscall::syscall(syscall_id, args, ctx);
-            // 调试: 记录 clone 之后的关键 syscall
+            // 只在 FORK_HAPPENED 后记录关键事件（非频繁）
             {
                 use core::sync::atomic::{AtomicBool, Ordering};
                 static FORK_HAPPENED: AtomicBool = AtomicBool::new(false);
-
-                let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(0);
-
-                // clone 发生后，记录所有进程的关键 syscall
-                if syscall_id == 220 {  // clone
-                    FORK_HAPPENED.store(true, Ordering::Relaxed);
-                }
-
+                if syscall_id == 220 { FORK_HAPPENED.store(true, Ordering::Relaxed); }
                 if FORK_HAPPENED.load(Ordering::Relaxed) {
-                    // 只过滤极高频的 clock_gettime、fcntl、sigprocmask、rt_sigaction
-                    let is_frequent = matches!(syscall_id, 96 | 113 | 114 | 25 | 134 | 135);
-                    if !is_frequent {
+                    let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(0);
+                    // 只记录 worker 进程（pid>1）的非频繁 syscall
+                    let is_frequent = matches!(syscall_id, 96 | 113 | 114 | 25 | 134 | 135 | 222 | 214 | 215 | 226 | 133 | 98 | 124);
+                    if pid > 1 && !is_frequent {
                         log::warn!("[pid={}] sc={} ret={}", pid, syscall_id, ret);
                     }
                 }
