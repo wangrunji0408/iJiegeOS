@@ -10,10 +10,7 @@ pub struct FrameTracker {
 impl FrameTracker {
     pub fn new(ppn: PhysPageNum) -> Self {
         // 清零页面
-        let bytes = ppn.get_bytes_array();
-        for byte in bytes.iter_mut() {
-            *byte = 0;
-        }
+        ppn.get_bytes_array().fill(0);
         Self { ppn }
     }
 }
