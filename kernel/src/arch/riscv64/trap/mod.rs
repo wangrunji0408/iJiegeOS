@@ -125,6 +125,16 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
         }
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
             crate::timer::handle_timer_interrupt();
+            // 定期打印进程状态用于调试
+            {
+                use core::sync::atomic::{AtomicU64, Ordering};
+                static TICK: AtomicU64 = AtomicU64::new(0);
+                let tick = TICK.fetch_add(1, Ordering::Relaxed);
+                if tick % 200 == 0 {
+                    let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(0);
+                    log::warn!("timer: pid={} sepc={:#x} sp={:#x}", pid, ctx.sepc, ctx.x[2]);
+                }
+            }
             crate::task::suspend_current_and_run_next();
         }
         Trap::Interrupt(Interrupt::SupervisorExternal) => {
