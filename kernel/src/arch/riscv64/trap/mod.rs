@@ -125,11 +125,8 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
                 use core::sync::atomic::{AtomicUsize, Ordering};
                 static TIMER_COUNT: AtomicUsize = AtomicUsize::new(0);
                 let n = TIMER_COUNT.fetch_add(1, Ordering::Relaxed);
-                // 每 1 次 timer 都记录，只记录 pid=1
                 let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(0);
-                if pid == 1 {
-                    log::warn!("[timer#{}] pid=1 sepc={:#x}", n, ctx.sepc);
-                }
+                log::warn!("[timer#{}] pid={} sepc={:#x}", n, pid, ctx.sepc);
             }
             crate::task::suspend_current_and_run_next();
         }
