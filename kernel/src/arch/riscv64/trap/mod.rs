@@ -217,3 +217,18 @@ pub extern "C" fn kernel_trap_handler(ctx: &mut TrapContext) {
         }
     }
 }
+
+/// 在 sret 之前的调试钩子（从汇编调用）
+/// 只有切换到新任务（trap_return 路径）时才会频繁调用，所以添加限制
+#[no_mangle]
+pub extern "C" fn debug_before_sret(trap_cx: &TrapContext) {
+    use core::sync::atomic::{AtomicU64, Ordering};
+    static SRET_COUNT: AtomicU64 = AtomicU64::new(0);
+    let count = SRET_COUNT.fetch_add(1, Ordering::Relaxed);
+    // 只打印前 5 次，避免日志泛滥
+    if count < 5 {
+        let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(9999);
+        log::error!("sret[{}]: pid={} sepc={:#x} user_sp={:#x} user_satp={:#x} sstatus={:#x}",
+            count, pid, trap_cx.sepc, trap_cx.x[2], trap_cx.user_satp, trap_cx.sstatus);
+    }
+}
