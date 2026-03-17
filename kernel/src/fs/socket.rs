@@ -75,7 +75,7 @@ impl FileDescriptor for Socket {
 
     fn can_read(&self) -> bool {
         let inner = self.inner.lock();
-        !inner.recv_buf.is_empty() || inner.listening
+        !inner.recv_buf.is_empty()
     }
 
     fn can_write(&self) -> bool {
