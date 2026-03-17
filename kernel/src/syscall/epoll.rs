@@ -63,6 +63,7 @@ impl crate::fs::FileDescriptor for EpollFd {
     }
     fn is_readable(&self) -> bool { false }
     fn is_writable(&self) -> bool { false }
+    fn epoll_id(&self) -> Option<usize> { Some(self.id) }
 }
 
 pub fn sys_epoll_create1(flags: i32) -> i64 {
