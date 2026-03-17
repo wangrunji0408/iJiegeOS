@@ -77,8 +77,8 @@ pub fn sys_listen(fd: usize, backlog: i32) -> i64 {
     // 设置监听状态，并在 smoltcp 中开始监听
     if let Some(socket) = file.as_socket() {
         let port = {
-            let inner = socket.inner.lock();
-            inner.listening = false;  // 不用这个标志
+            let mut inner = socket.inner.lock();
+            inner.listening = true;
             inner.local_addr.as_ref().map(|a| a.port)
         };
         // 在 smoltcp 中监听
