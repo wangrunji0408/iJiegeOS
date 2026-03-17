@@ -228,7 +228,6 @@ pub extern "C" fn debug_before_sret(trap_cx: &TrapContext) {
     let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(9999);
     // 打印前 200 次，或者 pid=2 的所有调用
     if count < 200 || pid == 2 {
-        let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(9999);
         log::error!("sret[{}]: pid={} sepc={:#x} user_sp={:#x} user_satp={:#x} sstatus={:#x}",
             count, pid, trap_cx.sepc, trap_cx.x[2], trap_cx.user_satp, trap_cx.sstatus);
     }
