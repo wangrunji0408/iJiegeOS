@@ -2,7 +2,7 @@
 /// 使用 smoltcp 实现 TCP/IP
 
 use smoltcp::{
-    iface::{Config, Interface, SocketSet},
+    iface::{Config, Interface, SocketHandle, SocketSet},
     socket::tcp,
     time::Instant,
     wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address},
@@ -16,7 +16,7 @@ use lazy_static::lazy_static;
 
 use crate::fs::socket::{Socket, SockAddr};
 
-/// VirtIO 网卡驱动（封装）
+/// VirtIO 网卡驱动（封装，作为 smoltcp Device）
 pub struct VirtioNet {
     tx_buf: VecDeque<Vec<u8>>,
     rx_buf: VecDeque<Vec<u8>>,
@@ -97,10 +97,10 @@ pub struct NetInterface {
     pub iface: Interface,
     pub sockets: SocketSet<'static>,
     pub device: VirtioNet,
-    /// 端口 -> (smoltcp handle, nginx socket ptr)
-    pub tcp_listeners: BTreeMap<u16, smoltcp::iface::SocketHandle>,
-    /// 端口 -> nginx 监听 socket 的接受队列（已建立连接的 smoltcp handle）
-    pub pending_accepts: BTreeMap<u16, VecDeque<smoltcp::iface::SocketHandle>>,
+    /// 端口 -> smoltcp TCP socket handle（监听者）
+    pub tcp_listeners: BTreeMap<u16, SocketHandle>,
+    /// 端口 -> 已建立连接待 accept 的 smoltcp handle 队列
+    pub pending_accepts: BTreeMap<u16, VecDeque<SocketHandle>>,
 }
 
 lazy_static! {
@@ -144,70 +144,73 @@ fn smoltcp_now() -> Instant {
     Instant::from_millis(crate::timer::get_time_ms() as i64)
 }
 
-/// 轮询网络接口：从 VirtIO 设备读取数据 → smoltcp → 写回 VirtIO
+/// 轮询网络接口：读取 VirtIO RX → smoltcp → 写出 VirtIO TX
 pub fn poll() {
-    // 先从真实 VirtIO 设备读取数据包，推入 smoltcp device 的 rx_buf
-    if let Some(ref mut net_dev) = crate::drivers::virtio::NET_DEVICE.lock().as_mut() {
-        if let Ok(rx_buf) = net_dev.receive() {
-            let pkt = rx_buf.packet().to_vec();
-            drop(rx_buf);
-            if let Some(ref mut iface_state) = NET_IFACE.lock().as_mut() {
-                iface_state.device.push_rx(pkt);
-            }
+    // 从真实 VirtIO 设备接收数据包，推入 smoltcp device rx_buf
+    while let Some(pkt) = crate::drivers::net_receive_packet() {
+        let mut guard = NET_IFACE.lock();
+        if let Some(ref mut state) = guard.as_mut() {
+            state.device.push_rx(pkt);
         }
     }
 
-    // 运行 smoltcp 的网络栈处理
+    // 运行 smoltcp 网络栈
+    {
+        let mut guard = NET_IFACE.lock();
+        if let Some(ref mut state) = guard.as_mut() {
+            let timestamp = smoltcp_now();
+            state.iface.poll(timestamp, &mut state.device, &mut state.sockets);
+        }
+    }
+
+    // 把 smoltcp 要发出的数据包发给 VirtIO
+    loop {
+        let pkt = {
+            let mut guard = NET_IFACE.lock();
+            guard.as_mut().and_then(|s| s.device.pop_tx())
+        };
+        match pkt {
+            Some(p) => crate::drivers::net_send_packet(&p),
+            None => break,
+        }
+    }
+
+    // 检查监听 socket 是否有新连接
     let mut guard = NET_IFACE.lock();
     if let Some(ref mut state) = guard.as_mut() {
-        let timestamp = smoltcp_now();
-        state.iface.poll(timestamp, &mut state.device, &mut state.sockets);
-
-        // 把 smoltcp 想发出的数据包发给 VirtIO 设备
-        while let Some(pkt) = state.device.pop_tx() {
-            drop(guard);
-            if let Some(ref mut net_dev) = crate::drivers::virtio::NET_DEVICE.lock().as_mut() {
-                let _ = net_dev.send(pkt.len(), |buf| {
-                    let n = pkt.len().min(buf.len());
-                    buf[..n].copy_from_slice(&pkt[..n]);
-                });
-            }
-            guard = NET_IFACE.lock();
-            if guard.is_none() { break; }
-        }
-
-        // 检查监听 TCP socket 是否有新连接
-        if let Some(ref mut state) = guard.as_mut() {
-            let mut new_conns: Vec<(u16, smoltcp::iface::SocketHandle)> = Vec::new();
-            for (&port, &listener_handle) in state.tcp_listeners.iter() {
-                // 检查是否有新连接，如果是，创建新的监听 socket
-                let tcp_sock = state.sockets.get_mut::<tcp::Socket>(listener_handle);
-                if tcp_sock.is_active() && tcp_sock.may_recv() {
-                    // 这个 socket 已经建立连接，移到 pending_accepts
-                    new_conns.push((port, listener_handle));
-                }
-            }
-            for (port, handle) in new_conns {
+        let ports: Vec<u16> = state.tcp_listeners.keys().copied().collect();
+        for port in ports {
+            let handle = state.tcp_listeners[&port];
+            let is_connected = {
+                let tcp_sock = state.sockets.get::<tcp::Socket>(handle);
+                tcp_sock.is_active() && tcp_sock.may_recv()
+            };
+            if is_connected {
+                // 此连接已建立，移到 pending_accepts
                 state.tcp_listeners.remove(&port);
                 state.pending_accepts.entry(port).or_default().push_back(handle);
-                // 创建新的监听 socket
+                // 创建新的监听 socket 继续监听
                 let mut new_tcp = tcp::Socket::new(
                     tcp::SocketBuffer::new(vec![0u8; 65536]),
                     tcp::SocketBuffer::new(vec![0u8; 65536]),
                 );
-                new_tcp.listen(port).ok();
-                let new_handle = state.sockets.add(new_tcp);
-                state.tcp_listeners.insert(port, new_handle);
+                if new_tcp.listen(port).is_ok() {
+                    let new_handle = state.sockets.add(new_tcp);
+                    state.tcp_listeners.insert(port, new_handle);
+                    log::debug!("net: new connection on port {}, created new listener", port);
+                }
             }
         }
     }
 }
 
-/// 绑定端口并开始监听（被 sys_listen 调用）
+/// 绑定并监听 TCP 端口（被 sys_listen 调用）
 pub fn tcp_listen(port: u16) {
     let mut guard = NET_IFACE.lock();
     if let Some(ref mut state) = guard.as_mut() {
-        // 创建 smoltcp TCP socket 并监听
+        if state.tcp_listeners.contains_key(&port) {
+            return;  // 已在监听
+        }
         let mut tcp_sock = tcp::Socket::new(
             tcp::SocketBuffer::new(vec![0u8; 65536]),
             tcp::SocketBuffer::new(vec![0u8; 65536]),
@@ -222,30 +225,25 @@ pub fn tcp_listen(port: u16) {
     }
 }
 
-/// 检查端口是否有待接受的连接
+/// 检查是否有待 accept 的连接
 pub fn tcp_has_pending(port: u16) -> bool {
     let guard = NET_IFACE.lock();
-    if let Some(ref state) = guard.as_ref() {
-        state.pending_accepts.get(&port)
-            .map(|q| !q.is_empty())
-            .unwrap_or(false)
-    } else {
-        false
-    }
+    guard.as_ref()
+        .and_then(|s| s.pending_accepts.get(&port))
+        .map(|q| !q.is_empty())
+        .unwrap_or(false)
 }
 
-/// 接受一个连接，返回连接的 smoltcp handle
-pub fn tcp_accept(port: u16) -> Option<smoltcp::iface::SocketHandle> {
+/// 从 smoltcp 中接受一个连接
+pub fn tcp_accept(port: u16) -> Option<SocketHandle> {
     let mut guard = NET_IFACE.lock();
-    if let Some(ref mut state) = guard.as_mut() {
-        state.pending_accepts.get_mut(&port)?.pop_front()
-    } else {
-        None
-    }
+    guard.as_mut()
+        .and_then(|s| s.pending_accepts.get_mut(&port))
+        .and_then(|q| q.pop_front())
 }
 
 /// 从 smoltcp socket 读取数据
-pub fn tcp_recv(handle: smoltcp::iface::SocketHandle, buf: &mut [u8]) -> isize {
+pub fn tcp_recv(handle: SocketHandle, buf: &mut [u8]) -> isize {
     let mut guard = NET_IFACE.lock();
     if let Some(ref mut state) = guard.as_mut() {
         let tcp_sock = state.sockets.get_mut::<tcp::Socket>(handle);
@@ -255,17 +253,17 @@ pub fn tcp_recv(handle: smoltcp::iface::SocketHandle, buf: &mut [u8]) -> isize {
                 Err(_) => -1,
             }
         } else if tcp_sock.is_active() {
-            0  // 还没数据，稍后重试
+            0  // 无数据，稍后重试
         } else {
-            -1  // 连接已关闭
+            -1  // 连接关闭
         }
     } else {
         -1
     }
 }
 
-/// 向 smoltcp socket 发送数据
-pub fn tcp_send(handle: smoltcp::iface::SocketHandle, buf: &[u8]) -> isize {
+/// 向 smoltcp socket 写入数据
+pub fn tcp_send(handle: SocketHandle, buf: &[u8]) -> isize {
     let mut guard = NET_IFACE.lock();
     if let Some(ref mut state) = guard.as_mut() {
         let tcp_sock = state.sockets.get_mut::<tcp::Socket>(handle);
@@ -282,51 +280,42 @@ pub fn tcp_send(handle: smoltcp::iface::SocketHandle, buf: &[u8]) -> isize {
     }
 }
 
-/// Socket 系统调用实现（简化版，不使用 smoltcp）
-pub fn socket_send(sock: &Socket, buf: &[u8], flags: i32) -> isize {
-    let inner = sock.inner.lock();
-    if let Some(handle) = inner.handle {
-        drop(inner);
-        let h = smoltcp::iface::SocketHandle::from(handle);
-        tcp_send(h, buf)
-    } else {
-        drop(inner);
-        poll();
-        buf.len() as isize  // 假装成功
-    }
-}
-
+/// Socket recv（由 FileDescriptor::read 调用）
 pub fn socket_recv(sock: &Socket, buf: &mut [u8], flags: i32) -> isize {
     poll();
 
     let inner = sock.inner.lock();
-    if let Some(handle) = inner.handle {
-        drop(inner);
-        let h = smoltcp::iface::SocketHandle::from(handle);
-        tcp_recv(h, buf)
-    } else {
-        drop(inner);
-        let mut inner2 = sock.inner.lock();
-        if inner2.recv_buf.is_empty() {
-            if inner2.nonblock {
-                return -11;  // EAGAIN
-            }
-            return 0;
-        }
-        let n = buf.len().min(inner2.recv_buf.len());
-        for i in 0..n {
-            buf[i] = inner2.recv_buf.pop_front().unwrap();
-        }
-        n as isize
+    if inner.recv_buf.is_empty() {
+        if inner.nonblock { return -11; }  // EAGAIN
+        return 0;
     }
+    drop(inner);
+
+    let mut inner2 = sock.inner.lock();
+    let n = buf.len().min(inner2.recv_buf.len());
+    for i in 0..n {
+        buf[i] = inner2.recv_buf.pop_front().unwrap();
+    }
+    n as isize
 }
 
-/// 获取套接字地址结构
+/// Socket send（由 FileDescriptor::write 调用）
+pub fn socket_send(sock: &Socket, buf: &[u8], flags: i32) -> isize {
+    let mut inner = sock.inner.lock();
+    if !inner.connected { return -111; }  // ECONNREFUSED
+    for &b in buf {
+        inner.send_buf.push_back(b);
+    }
+    drop(inner);
+    poll();
+    buf.len() as isize
+}
+
+/// 解析 sockaddr_in 结构
 pub fn parse_sockaddr(addr: &[u8]) -> Option<SockAddr> {
     if addr.len() < 8 { return None; }
-    // sockaddr_in: sa_family(2) + sin_port(2) + sin_addr(4) + ...
     let family = u16::from_le_bytes([addr[0], addr[1]]);
-    if family != 2 { return None; }  // AF_INET
+    if family != 2 { return None; }  // AF_INET only
     let port = u16::from_be_bytes([addr[2], addr[3]]);
     let ip = [addr[4], addr[5], addr[6], addr[7]];
     Some(SockAddr { port, ip })
