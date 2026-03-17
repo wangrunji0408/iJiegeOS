@@ -299,10 +299,7 @@ pub fn sys_getsockopt(fd: usize, level: i32, optname: i32, optval: *mut u8, optl
     drop(inner);
 
     let val: i32 = match (level, optname) {
-        (1, 30) => {  // SOL_SOCKET, SO_ACCEPTCONN — is this socket listening?
-            log::warn!("getsockopt: fd={} SO_ACCEPTCONN -> {}", fd, listening as i32);
-            listening as i32
-        }
+        log::warn!("getsockopt:fd={} l={} opt={} -> {}", fd, level, optname, val);
         (1, 4) => {  // SOL_SOCKET, SO_ERROR
             0
         }
