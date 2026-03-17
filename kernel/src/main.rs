@@ -34,24 +34,32 @@ pub fn kernel_main(hart_id: usize, dtb_pa: usize) -> ! {
         println!("\x1b[32miJiege OS v0.1.0 - RISC-V64 Kernel\x1b[0m");
         println!("Hart ID: {}, DTB: {:#x}", hart_id, dtb_pa);
 
+        println!("Initializing memory...");
         mm::init();
+        println!("Memory initialized OK");
         logger::init();
         log::info!("Memory initialized");
 
+        println!("Initializing arch...");
         arch::init();
         log::info!("Architecture initialized");
 
+        println!("Initializing timer...");
         timer::init();
 
+        println!("Initializing drivers...");
         drivers::init(dtb_pa);
         log::info!("Drivers initialized");
 
+        println!("Initializing filesystem...");
         fs::init();
         log::info!("Filesystem initialized");
 
+        println!("Initializing network...");
         net::init();
         log::info!("Network initialized");
 
+        println!("Initializing tasks...");
         task::init();
         log::info!("Task manager initialized");
 
