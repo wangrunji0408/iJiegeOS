@@ -85,13 +85,7 @@ impl FileDescriptor for Socket {
         if inner.listening {
             let port = inner.local_addr.as_ref().map(|a| a.port).unwrap_or(0);
             if port > 0 {
-                let r = crate::net::tcp_has_pending(port);
-                if r {
-                    fn p(c: u8) { crate::arch::sbi::console_putchar(c); }
-                    fn ps(s: &str) { for b in s.bytes() { p(b); } }
-                    ps("CANREAD_LISTEN_YES\n");
-                }
-                return r;
+                return crate::net::tcp_has_pending(port);
             }
         }
         !inner.recv_buf.is_empty()
