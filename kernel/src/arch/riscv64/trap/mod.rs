@@ -174,5 +174,3 @@ pub extern "C" fn debug_before_sret(_trap_cx: &TrapContext) {}
 /// 调试钩子（空实现，从汇编调用）
 #[no_mangle]
 pub extern "C" fn sbi_debug_restore(_trap_cx: &TrapContext) {}
-    }
-}
