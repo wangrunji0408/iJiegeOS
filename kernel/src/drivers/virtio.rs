@@ -154,25 +154,16 @@ pub fn handle_virtio_interrupt(irq: usize) {
 pub fn net_receive_packet() -> Option<alloc::vec::Vec<u8>> {
     let mut dev = NET_DEVICE.lock();
     if let Some(ref mut net) = dev.as_mut() {
-        let can = net.can_recv();
-        if !can {
+        if !net.can_recv() {
             return None;
         }
-        fn p(c: u8) { crate::arch::sbi::console_putchar(c); }
-        fn ps(s: &str) { for b in s.bytes() { p(b); } }
-        fn pd(mut n: u64) { if n==0{p(b'0');return;} let mut buf=[0u8;20]; let mut i=20; while n>0{i-=1;buf[i]=b'0'+(n%10)as u8;n/=10;} for b in &buf[i..]{p(*b);} }
-        ps("VNET_RECV\n");
         match net.receive() {
             Ok(rx_buf) => {
                 let pkt = rx_buf.packet().to_vec();
-                log::warn!("net_receive_packet: got {} bytes", pkt.len());
                 net.recycle_rx_buffer(rx_buf).ok();
                 Some(pkt)
             }
-            Err(e) => {
-                log::debug!("net_receive_packet: receive error: {:?}", e);
-                None
-            }
+            Err(_) => None,
         }
     } else {
         None
@@ -181,25 +172,13 @@ pub fn net_receive_packet() -> Option<alloc::vec::Vec<u8>> {
 
 /// 网络发送一个数据包（以太网帧字节）
 pub fn net_send_packet(data: &[u8]) {
-    fn p(c: u8) { crate::arch::sbi::console_putchar(c); }
-    fn ps(s: &str) { for b in s.bytes() { p(b); } }
-    fn pd(mut n: u64) { if n==0{p(b'0');return;} let mut buf=[0u8;20]; let mut i=20; while n>0{i-=1;buf[i]=b'0'+(n%10)as u8;n/=10;} for b in &buf[i..]{p(*b);} }
-    ps("TX:"); pd(data.len() as u64); ps("B\n");
     let mut dev = NET_DEVICE.lock();
     if let Some(ref mut net) = dev.as_mut() {
         if net.can_send() {
-            log::warn!("net_send_packet: sending {} bytes", data.len());
             use virtio_drivers::device::net::TxBuffer;
             let tx = TxBuffer::from(data);
-            match net.send(tx) {
-                Ok(_) => log::warn!("net_send_packet: sent ok"),
-                Err(e) => log::warn!("net_send_packet: send error: {:?}", e),
-            }
-        } else {
-            log::warn!("net_send_packet: can't send (queue full?)");
+            net.send(tx).ok();
         }
-    } else {
-        log::warn!("net_send_packet: no NET_DEVICE");
     }
 }
 
