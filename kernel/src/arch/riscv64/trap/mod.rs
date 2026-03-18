@@ -110,12 +110,7 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
         Trap::Exception(Exception::StoreFault)
         | Trap::Exception(Exception::StorePageFault) => {
             if !crate::mm::handle_page_fault(stval, scause.bits()) {
-                log::warn!("Store fault: addr={:#x}, sepc={:#x}, ra={:#x}, sp={:#x}, a0={:#x}, a5={:#x}, s6={:#x}",
-                    stval, ctx.sepc, ctx.x[1], ctx.x[2], ctx.x[10], ctx.x[15], ctx.x[22]);
-                // Print all registers for debugging
-                for i in 0..32 {
-                    log::warn!("  x[{}]={:#x}", i, ctx.x[i]);
-                }
+                log::warn!("Store fault: addr={:#x}, sepc={:#x}", stval, ctx.sepc);
                 crate::task::current_add_signal(crate::signal::Signal::SIGSEGV);
             }
         }
@@ -128,12 +123,9 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
         }
         Trap::Exception(Exception::InstructionFault)
         | Trap::Exception(Exception::InstructionPageFault) => {
-            log::warn!("IPF: addr={:#x}, sepc={:#x}, handling...", stval, ctx.sepc);
             if !crate::mm::handle_page_fault(stval, scause.bits()) {
                 log::warn!("Instruction fault: addr={:#x}, sepc={:#x}", stval, ctx.sepc);
                 crate::task::current_add_signal(crate::signal::Signal::SIGSEGV);
-            } else {
-                log::warn!("IPF: handled ok, addr={:#x}", stval);
             }
         }
         Trap::Exception(Exception::IllegalInstruction) => {
