@@ -290,17 +290,10 @@ pub fn tcp_listen(port: u16) {
 /// 检查是否有待 accept 的连接
 pub fn tcp_has_pending(port: u16) -> bool {
     let guard = NET_IFACE.lock();
-    let result = guard.as_ref()
+    guard.as_ref()
         .and_then(|s| s.pending_accepts.get(&port))
         .map(|q| !q.is_empty())
-        .unwrap_or(false);
-    if result {
-        fn p(c: u8) { crate::arch::sbi::console_putchar(c); }
-        fn ps(s: &str) { for b in s.bytes() { p(b); } }
-        fn pd(mut n: u64) { if n==0{p(b'0');return;} let mut buf=[0u8;20]; let mut i=20; while n>0{i-=1;buf[i]=b'0'+(n%10)as u8;n/=10;} for b in &buf[i..]{p(*b);} }
-        ps("HAS_PENDING:port="); pd(port as u64); ps("\n");
-    }
-    result
+        .unwrap_or(false)
 }
 
 /// 从 smoltcp 中接受一个连接
