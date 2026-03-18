@@ -51,18 +51,12 @@ pub fn sys_bind(fd: usize, addr: *const u8, addrlen: u32) -> i64 {
     };
 
     if let Some(sa) = crate::net::parse_sockaddr(&addr_bytes) {
-        fn p(c: u8) { crate::arch::sbi::console_putchar(c); }
-        fn ps(s: &str) { for b in s.bytes() { p(b); } }
-        fn pd(mut n: u64) { if n==0{p(b'0');return;} let mut buf=[0u8;20]; let mut i=20; while n>0{i-=1;buf[i]=b'0'+(n%10)as u8;n/=10;} for b in &buf[i..]{p(*b);} }
-        ps("bind:fd="); pd(fd as u64); ps(" port="); pd(sa.port as u64); ps("\n");
-        log::debug!("bind:{} port={}", fd, sa.port);
         let mut inner = socket.inner.lock();
         inner.local_addr = Some(sa);
         inner.bound = true;
         0
     } else if addr_bytes.len() >= 2 {
         // AF_UNIX
-        log::debug!("bind:{} AF_UNIX", fd);
         let mut inner = socket.inner.lock();
         inner.bound = true;
         0
@@ -72,11 +66,6 @@ pub fn sys_bind(fd: usize, addr: *const u8, addrlen: u32) -> i64 {
 }
 
 pub fn sys_listen(fd: usize, backlog: i32) -> i64 {
-    fn p(c: u8) { crate::arch::sbi::console_putchar(c); }
-    fn ps(s: &str) { for b in s.bytes() { p(b); } }
-    fn pd(mut n: u64) { if n==0{p(b'0');return;} let mut buf=[0u8;20]; let mut i=20; while n>0{i-=1;buf[i]=b'0'+(n%10)as u8;n/=10;} for b in &buf[i..]{p(*b);} }
-    ps("listen:fd="); pd(fd as u64); ps("\n");
-    log::warn!("sys_listen: fd={}", fd);
     let task = current_task().unwrap();
     let inner = task.inner_exclusive_access();
     let file = match inner.get_fd(fd) {
@@ -95,7 +84,6 @@ pub fn sys_listen(fd: usize, backlog: i32) -> i64 {
         // 在 smoltcp 中监听
         if let Some(port) = port {
             crate::net::tcp_listen(port);
-            socket.inner.lock().listening = true;
         }
     }
     0
@@ -191,10 +179,6 @@ pub fn sys_accept4(fd: usize, addr: *mut u8, addrlen: *mut u32, flags: i32) -> i
         let mut inner = task.inner_exclusive_access();
         let new_fd = inner.alloc_fd();
         inner.fd_table[new_fd] = Some(new_socket);
-        fn p(c: u8) { crate::arch::sbi::console_putchar(c); }
-        fn ps(s: &str) { for b in s.bytes() { p(b); } }
-        fn pd(mut n: u64) { if n==0{p(b'0');return;} let mut buf=[0u8;20]; let mut i=20; while n>0{i-=1;buf[i]=b'0'+(n%10)as u8;n/=10;} for b in &buf[i..]{p(*b);} }
-        ps("accept4:ok fd="); pd(new_fd as u64); ps("\n");
         return new_fd as i64;
     }
 
@@ -214,10 +198,6 @@ pub fn sys_accept4(fd: usize, addr: *mut u8, addrlen: *mut u32, flags: i32) -> i
             let mut inner = task.inner_exclusive_access();
             let new_fd = inner.alloc_fd();
             inner.fd_table[new_fd] = Some(new_socket);
-            fn p(c: u8) { crate::arch::sbi::console_putchar(c); }
-            fn ps(s: &str) { for b in s.bytes() { p(b); } }
-            fn pd(mut n: u64) { if n==0{p(b'0');return;} let mut buf=[0u8;20]; let mut i=20; while n>0{i-=1;buf[i]=b'0'+(n%10)as u8;n/=10;} for b in &buf[i..]{p(*b);} }
-            ps("accept4:ok fd="); pd(new_fd as u64); ps("\n");
             return new_fd as i64;
         }
     }
