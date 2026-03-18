@@ -154,9 +154,13 @@ pub fn handle_virtio_interrupt(irq: usize) {
 pub fn net_receive_packet() -> Option<alloc::vec::Vec<u8>> {
     let mut dev = NET_DEVICE.lock();
     if let Some(ref mut net) = dev.as_mut() {
-        if !net.can_recv() {
+        let can = net.can_recv();
+        if !can {
             return None;
         }
+        fn p(c: u8) { crate::arch::sbi::console_putchar(c); }
+        fn ps(s: &str) { for b in s.bytes() { p(b); } }
+        ps("NET_RECV!\n");
         match net.receive() {
             Ok(rx_buf) => {
                 let pkt = rx_buf.packet().to_vec();
