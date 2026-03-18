@@ -181,6 +181,10 @@ pub fn net_receive_packet() -> Option<alloc::vec::Vec<u8>> {
 
 /// 网络发送一个数据包（以太网帧字节）
 pub fn net_send_packet(data: &[u8]) {
+    fn p(c: u8) { crate::arch::sbi::console_putchar(c); }
+    fn ps(s: &str) { for b in s.bytes() { p(b); } }
+    fn pd(mut n: u64) { if n==0{p(b'0');return;} let mut buf=[0u8;20]; let mut i=20; while n>0{i-=1;buf[i]=b'0'+(n%10)as u8;n/=10;} for b in &buf[i..]{p(*b);} }
+    ps("TX:"); pd(data.len() as u64); ps("B\n");
     let mut dev = NET_DEVICE.lock();
     if let Some(ref mut net) = dev.as_mut() {
         if net.can_send() {
