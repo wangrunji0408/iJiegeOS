@@ -168,7 +168,7 @@ pub fn sys_accept4(fd: usize, addr: *mut u8, addrlen: *mut u32, flags: i32) -> i
                     let port = ep.port;
                     sa[2] = (port >> 8) as u8;
                     sa[3] = (port & 0xff) as u8;
-                    sa[4..8].copy_from_slice(&ip4.octets());
+                    sa[4..8].copy_from_slice(&ip4.0);
                 }
                 let bufs = crate::mm::translated_byte_buffer(tok, addr, 16);
                 let mut off = 0;
