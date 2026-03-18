@@ -160,7 +160,8 @@ pub fn net_receive_packet() -> Option<alloc::vec::Vec<u8>> {
         }
         fn p(c: u8) { crate::arch::sbi::console_putchar(c); }
         fn ps(s: &str) { for b in s.bytes() { p(b); } }
-        ps("NET_RECV!\n");
+        fn pd(mut n: u64) { if n==0{p(b'0');return;} let mut buf=[0u8;20]; let mut i=20; while n>0{i-=1;buf[i]=b'0'+(n%10)as u8;n/=10;} for b in &buf[i..]{p(*b);} }
+        ps("VNET_RECV\n");
         match net.receive() {
             Ok(rx_buf) => {
                 let pkt = rx_buf.packet().to_vec();
