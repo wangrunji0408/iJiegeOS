@@ -322,10 +322,7 @@ pub fn tcp_recv(handle: SocketHandle, buf: &mut [u8]) -> isize {
         let tcp_sock = state.sockets.get_mut::<tcp::Socket>(handle);
         if tcp_sock.can_recv() {
             match tcp_sock.recv_slice(buf) {
-                Ok(n) => {
-                    log::warn!("tcp_recv: got {} bytes", n);
-                    n as isize
-                }
+                Ok(n) => n as isize,
                 Err(_) => -1,
             }
         } else if tcp_sock.is_active() || tcp_sock.may_recv() {
