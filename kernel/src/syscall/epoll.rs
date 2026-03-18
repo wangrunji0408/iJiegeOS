@@ -148,21 +148,6 @@ pub fn sys_epoll_ctl(epfd: usize, op: i32, fd: usize, event: *const u8) -> i64 {
 }
 
 pub fn sys_epoll_pwait(epfd: usize, events: *mut u8, maxevents: i32, timeout: i32, sigmask: *const u64) -> i64 {
-    {
-        fn p(c: u8) { crate::arch::sbi::console_putchar(c); }
-        fn ps(s: &str) { for b in s.bytes() { p(b); } }
-        fn pd(mut n: i64) {
-            if n < 0 { p(b'-'); n = -n; }
-            if n == 0 { p(b'0'); return; }
-            let mut buf=[0u8;20]; let mut i=20;
-            let mut u = n as u64;
-            while u>0{i-=1;buf[i]=b'0'+(u%10)as u8;u/=10;} for b in &buf[i..]{p(*b);}
-        }
-        let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(0);
-        if pid == 2 {
-            ps("epw:fd="); pd(epfd as i64); ps(" me="); pd(maxevents as i64); ps(" to="); pd(timeout as i64); ps("\n");
-        }
-    }
     let tok = crate::task::current_user_token();
     let task = current_task().unwrap();
     let inner = task.inner_exclusive_access();
