@@ -148,13 +148,53 @@ pub fn sys_accept4(fd: usize, addr: *mut u8, addrlen: *mut u32, flags: i32) -> i
         new_socket
     };
 
+    let fill_addr = |handle: smoltcp::iface::SocketHandle| {
+        // 填写对端地址（sockaddr_in）
+        if !addr.is_null() && !addrlen.is_null() {
+            let tok = token();
+            // 从 smoltcp 获取对端地址
+            let peer = {
+                let guard = crate::net::NET_IFACE.lock();
+                guard.as_ref().map(|state| {
+                    let tcp_sock = state.sockets.get::<smoltcp::socket::tcp::Socket>(handle);
+                    tcp_sock.remote_endpoint()
+                }).flatten()
+            };
+            if let Some(ep) = peer {
+                // 写入 sockaddr_in: family(2), port(be), addr(be)
+                let mut sa = [0u8; 16];
+                sa[0] = 2; sa[1] = 0;  // AF_INET
+                if let smoltcp::wire::IpAddress::Ipv4(ip4) = ep.addr {
+                    let port = ep.port;
+                    sa[2] = (port >> 8) as u8;
+                    sa[3] = (port & 0xff) as u8;
+                    sa[4..8].copy_from_slice(&ip4.octets());
+                }
+                let bufs = crate::mm::translated_byte_buffer(tok, addr, 16);
+                let mut off = 0;
+                for b in bufs {
+                    let n = b.len().min(16 - off);
+                    b[..n].copy_from_slice(&sa[off..off + n]);
+                    off += n;
+                }
+                *crate::mm::translated_refmut(tok, addrlen) = 16u32;
+            } else {
+                *crate::mm::translated_refmut(tok, addrlen) = 0u32;
+            }
+        }
+    };
+
     if let Some(handle) = crate::net::tcp_accept(port) {
+        fill_addr(handle);
         let new_socket = make_socket(handle);
         let task = current_task().unwrap();
         let mut inner = task.inner_exclusive_access();
         let new_fd = inner.alloc_fd();
         inner.fd_table[new_fd] = Some(new_socket);
-        log::warn!("accept4: fd={} -> new_fd={} nonblock={}", fd, new_fd, new_nonblock);
+        fn p(c: u8) { crate::arch::sbi::console_putchar(c); }
+        fn ps(s: &str) { for b in s.bytes() { p(b); } }
+        fn pd(mut n: u64) { if n==0{p(b'0');return;} let mut buf=[0u8;20]; let mut i=20; while n>0{i-=1;buf[i]=b'0'+(n%10)as u8;n/=10;} for b in &buf[i..]{p(*b);} }
+        ps("accept4:ok fd="); pd(new_fd as u64); ps("\n");
         return new_fd as i64;
     }
 
@@ -168,12 +208,16 @@ pub fn sys_accept4(fd: usize, addr: *mut u8, addrlen: *mut u32, flags: i32) -> i
         crate::net::poll();
 
         if let Some(handle) = crate::net::tcp_accept(port) {
+            fill_addr(handle);
             let new_socket = make_socket(handle);
             let task = current_task().unwrap();
             let mut inner = task.inner_exclusive_access();
             let new_fd = inner.alloc_fd();
             inner.fd_table[new_fd] = Some(new_socket);
-            log::warn!("accept4: fd={} -> new_fd={} nonblock={}", fd, new_fd, new_nonblock);
+            fn p(c: u8) { crate::arch::sbi::console_putchar(c); }
+            fn ps(s: &str) { for b in s.bytes() { p(b); } }
+            fn pd(mut n: u64) { if n==0{p(b'0');return;} let mut buf=[0u8;20]; let mut i=20; while n>0{i-=1;buf[i]=b'0'+(n%10)as u8;n/=10;} for b in &buf[i..]{p(*b);} }
+            ps("accept4:ok fd="); pd(new_fd as u64); ps("\n");
             return new_fd as i64;
         }
     }
