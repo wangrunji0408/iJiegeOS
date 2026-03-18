@@ -250,6 +250,10 @@ pub fn poll() {
                     // 此连接已建立，移到 pending_accepts
                     state.tcp_listeners.remove(&port);
                     state.pending_accepts.entry(port).or_default().push_back(handle);
+                    let pend_cnt = state.pending_accepts.get(&port).map(|q| q.len()).unwrap_or(0);
+                    ps("PEND_CNT:"); pd(pend_cnt as u64); ps("\n");
+                    state.tcp_listeners.remove(&port);
+                    state.pending_accepts.entry(port).or_default().push_back(handle);
                     // 创建新的监听 socket 继续监听
                     let mut new_tcp = tcp::Socket::new(
                         tcp::SocketBuffer::new(vec![0u8; 65536]),
