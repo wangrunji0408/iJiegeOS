@@ -66,83 +66,30 @@ pub fn run_first_task() -> ! {
     unreachable!()
 }
 
-fn sbi_put(c: u8) { crate::arch::sbi::console_putchar(c); }
-fn sbi_puts(s: &str) { for b in s.bytes() { sbi_put(b); } }
-fn sbi_hex(mut n: u64) {
-    sbi_put(b'0'); sbi_put(b'x');
-    for i in (0..16).rev() {
-        let d = ((n >> (i*4)) & 0xf) as u8;
-        sbi_put(if d < 10 { b'0' + d } else { b'a' + d - 10 });
-    }
-}
-fn sbi_dec(mut n: i32) {
-    if n < 0 { sbi_put(b'-'); n = -n; }
-    if n == 0 { sbi_put(b'0'); return; }
-    let mut buf = [0u8; 10]; let mut i = 10;
-    let mut u = n as u32;
-    while u > 0 { i -= 1; buf[i] = b'0' + (u % 10) as u8; u /= 10; }
-    for b in &buf[i..] { sbi_put(*b); }
-}
-
 /// 挂起当前任务，切换到下一个就绪任务
 pub fn suspend_current_and_run_next() {
-    sbi_puts("S0\n");  // 进入函数
-    let current = {
-        let guard = CURRENT_TASK.lock();
-        sbi_puts("S1\n");  // 获取 CURRENT_TASK 成功
-        guard.clone()
-    };
-    sbi_puts("S2\n");  // CURRENT_TASK 释放
+    let current = CURRENT_TASK.lock().clone();
 
     if let Some(task) = current {
-        let cur_pid = task.pid.0;
-        sbi_puts("S3\n");  // 有当前任务
         let mut inner = task.inner_exclusive_access();
-        sbi_puts("S4\n");  // 获取 inner 成功
         inner.state = TaskState::Ready;
         let current_cx = &mut inner.task_cx as *mut TaskContext;
         drop(inner);
-        sbi_puts("S5\n");  // inner 释放
 
-        // 把当前任务放回就绪队列
-        // 先尝试 try_lock 诊断
-        match TASK_MANAGER.try_lock() {
-            Some(_guard) => {
-                sbi_puts("TASK_MANAGER_FREE\n");
-                drop(_guard);
-            }
-            None => {
-                sbi_puts("TASK_MANAGER_LOCKED!\n");
-            }
-        }
         TASK_MANAGER.lock().push_ready(task.clone());
-        sbi_puts("S6\n");  // push_ready 完成
 
-        // 找下一个任务（先释放 TASK_MANAGER 锁，再进入 if let 体）
         let next_task = TASK_MANAGER.lock().pop_ready();
         if let Some(next_task) = next_task {
-            sbi_puts("S7\n");  // pop_ready 有结果
             let mut next_inner = next_task.inner_exclusive_access();
             next_inner.state = TaskState::Running;
             let next_cx = &next_inner.task_cx as *const TaskContext;
-            let next_pid = next_task.pid.0;
-            let next_sp = next_inner.task_cx.sp;
-            let next_ra = next_inner.task_cx.ra;
             drop(next_inner);
-
-            // 用 SBI 直接输出，避免 UART Mutex 死锁
-            sbi_puts("sw:");
-            sbi_dec(cur_pid); sbi_puts("->"); sbi_dec(next_pid);
-            sbi_puts(" ra="); sbi_hex(next_ra as u64);
-            sbi_puts("\n");
 
             *CURRENT_TASK.lock() = Some(next_task);
 
             unsafe {
                 __switch(current_cx, next_cx);
             }
-        } else {
-            sbi_puts("sw:"); sbi_dec(cur_pid); sbi_puts("->NONE\n");
         }
     }
 }
