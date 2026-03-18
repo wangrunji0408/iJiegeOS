@@ -89,34 +89,6 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
     let scause = scause::read();
     let stval = stval::read();
 
-    // 对 pid=2 打印所有非 syscall 的 trap（用 SBI 输出）
-    {
-        use core::sync::atomic::{AtomicBool, Ordering};
-        static P2: AtomicBool = AtomicBool::new(false);
-        if scause.bits() == 8 { /* UserEnvCall=8, 由 syscall 处理已有输出 */ }
-        else {
-            let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(0);
-            if P2.load(Ordering::Relaxed) && pid == 2 {
-                fn p(c: u8) { crate::arch::sbi::console_putchar(c); }
-                fn ps(s: &str) { for b in s.bytes() { p(b); } }
-                fn ph(mut n: u64) {
-                    p(b'0'); p(b'x');
-                    for i in (0..16).rev() {
-                        let d = ((n >> (i*4)) & 0xf) as u8;
-                        p(if d < 10 { b'0' + d } else { b'a' + d - 10 });
-                    }
-                }
-                ps("[2]trap cause="); ph(scause.bits() as u64); ps(" sepc="); ph(ctx.sepc as u64); ps(" stval="); ph(stval as u64); ps("\n");
-            }
-            // 检测 clone（220 的 syscall），但 scause=8 时才是 syscall
-        }
-        // 更新 P2 标志（fork 之后）
-        if scause.bits() == 8 {
-            let sc_id = ctx.x[17]; // a7
-            if sc_id == 220 { P2.store(true, Ordering::Relaxed); }
-        }
-    }
-
     log::debug!("trap: cause={:?}, stval={:#x}, sepc={:#x}", scause.cause(), stval, ctx.sepc);
 
     match scause.cause() {
@@ -124,50 +96,8 @@ pub extern "C" fn trap_handler(ctx: &mut TrapContext) {
             ctx.sepc += 4;
             let syscall_id = ctx.syscall_id();
             let args = ctx.syscall_args();
-            // 用 SBI 打印 pid=2 的每个 syscall（在执行之前，避免死锁遮掩信息）
-            {
-                use core::sync::atomic::{AtomicBool, Ordering};
-                static FORK2: AtomicBool = AtomicBool::new(false);
-                if syscall_id == 220 { FORK2.store(true, Ordering::Relaxed); }
-                let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(0);
-                let is_net_sc = syscall_id >= 198 && syscall_id <= 203;
-                if (FORK2.load(Ordering::Relaxed) && pid == 2) || (pid == 1 && is_net_sc) {
-                    fn p(c: u8) { crate::arch::sbi::console_putchar(c); }
-                    fn ps(s: &str) { for b in s.bytes() { p(b); } }
-                    fn ph(mut n: u64) {
-                        for i in (0..16).rev() {
-                            let d = ((n >> (i*4)) & 0xf) as u8;
-                            p(if d < 10 { b'0' + d } else { b'a' + d - 10 });
-                        }
-                    }
-                    fn pd(mut n: u64) {
-                        if n == 0 { p(b'0'); return; }
-                        let mut buf = [0u8; 20]; let mut i = 20;
-                        while n > 0 { i -= 1; buf[i] = b'0' + (n % 10) as u8; n /= 10; }
-                        for b in &buf[i..] { p(*b); }
-                    }
-                    ps("["); pd(pid as u64); ps("]sc"); pd(syscall_id as u64);
-                    ps("("); ph(args[0] as u64); ps(","); ph(args[1] as u64); ps(","); ph(args[2] as u64);
-                    ps(")\n");
-                }
-            }
             log::debug!("syscall: id={}, args={:?}", syscall_id, args);
             let ret = crate::syscall::syscall(syscall_id, args, ctx);
-            // 打印 pid=2 的 syscall 返回值
-            {
-                use core::sync::atomic::{AtomicBool, Ordering};
-                static FORK2R: AtomicBool = AtomicBool::new(false);
-                if syscall_id == 220 { FORK2R.store(true, Ordering::Relaxed); }
-                let pid = crate::task::current_task().map(|t| t.pid.0).unwrap_or(0);
-                let is_net_sc2 = syscall_id >= 198 && syscall_id <= 203;
-                if (FORK2R.load(Ordering::Relaxed) && pid == 2) || (pid == 1 && is_net_sc2) {
-                    fn p(c: u8) { crate::arch::sbi::console_putchar(c); }
-                    fn ps(s: &str) { for b in s.bytes() { p(b); } }
-                    fn ph(mut n: u64) {
-                        for i in (0..16).rev() {
-                            let d = ((n >> (i*4)) & 0xf) as u8;
-                            p(if d < 10 { b'0' + d } else { b'a' + d - 10 });
-                        }
                     }
                     ps("=["); ph(ret as u64); ps("]\n");
                 }
