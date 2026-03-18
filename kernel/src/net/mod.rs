@@ -271,10 +271,6 @@ pub fn poll() {
 
 /// 绑定并监听 TCP 端口（被 sys_listen 调用）
 pub fn tcp_listen(port: u16) {
-    fn p(c: u8) { crate::arch::sbi::console_putchar(c); }
-    fn ps(s: &str) { for b in s.bytes() { p(b); } }
-    fn pd(mut n: u64) { if n==0{p(b'0');return;} let mut buf=[0u8;20]; let mut i=20; while n>0{i-=1;buf[i]=b'0'+(n%10)as u8;n/=10;} for b in &buf[i..]{p(*b);} }
-    ps("tcp_listen:port="); pd(port as u64); ps("\n");
     let mut guard = NET_IFACE.lock();
     if let Some(ref mut state) = guard.as_mut() {
         if state.tcp_listeners.contains_key(&port) {
@@ -287,9 +283,6 @@ pub fn tcp_listen(port: u16) {
         if tcp_sock.listen(port).is_ok() {
             let handle = state.sockets.add(tcp_sock);
             state.tcp_listeners.insert(port, handle);
-            log::info!("net: TCP listening on port {}", port);
-        } else {
-            log::warn!("net: failed to listen on port {}", port);
         }
     }
 }
