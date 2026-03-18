@@ -192,6 +192,12 @@ pub fn poll() {
         if pkt.is_none() { break; }
         let pkt = pkt.unwrap();
         rx_count += 1;
+        {
+            fn p(c: u8) { crate::arch::sbi::console_putchar(c); }
+            fn ps(s: &str) { for b in s.bytes() { p(b); } }
+            fn pd(mut n: u64) { if n==0{p(b'0');return;} let mut buf=[0u8;20]; let mut i=20; while n>0{i-=1;buf[i]=b'0'+(n%10)as u8;n/=10;} for b in &buf[i..]{p(*b);} }
+            ps("RX:"); pd(pkt.len() as u64); ps("B\n");
+        }
         let mut guard = NET_IFACE.lock();
         if let Some(ref mut state) = guard.as_mut() {
             log::warn!("net: RX {} bytes", pkt.len());
