@@ -264,6 +264,9 @@ pub fn load_elf_process(elf_data: &[u8], argv: &[&str], envp: &[&str]) {
         auxv.push((7, interp_base)); // AT_BASE
     }
 
+    println!("[ELF] auxv: AT_PHDR={:#x} AT_ENTRY={:#x} AT_BASE={:#x}",
+        phdr_addr, actual_entry, if has_interp { interp_base } else { 0 });
+
     auxv.push((0, 0)); // AT_NULL
 
     // Push auxv
