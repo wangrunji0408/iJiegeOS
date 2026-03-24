@@ -387,7 +387,11 @@ fn sys_mmap(addr: usize, len: usize, prot: usize, flags: usize, fd: i32, offset:
     use crate::mm::*;
 
     if len == 0 {
-        return -22; // EINVAL
+        // Return a valid but unusable address (some programs tolerate this)
+        let proc = crate::process::current_process();
+        let mut p = proc.lock();
+        p.mmap_top -= PAGE_SIZE;
+        return p.mmap_top as isize;
     }
 
     let proc = crate::process::current_process();
