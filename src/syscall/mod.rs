@@ -1081,6 +1081,8 @@ fn sys_epoll_ctl(epfd: usize, op: i32, fd: usize, event: usize) -> isize {
     let events = u32::from_le_bytes(event_data[0..4].try_into().unwrap());
     let data = u64::from_le_bytes(event_data[4..12].try_into().unwrap());
 
+    println!("[syscall] epoll_ctl(epfd={}, op={}, fd={}, events={:#x})", epfd, op, fd, events);
+
     let proc = crate::process::current_process();
     let p = proc.lock();
     if let Some(fd_obj) = p.get_fd(epfd) {
