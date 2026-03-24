@@ -48,6 +48,10 @@ impl RamFs {
         self.files.contains_key(path)
     }
 
+    pub fn files_with_prefix(&self, prefix: &str) -> bool {
+        self.files.keys().any(|k| k.starts_with(prefix))
+    }
+
     pub fn list_dir(&self, path: &str) -> Vec<String> {
         let prefix = if path == "/" { String::from("/") } else { format!("{}/", path) };
         let mut entries = Vec::new();
