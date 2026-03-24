@@ -173,6 +173,20 @@ pub fn load_elf_process(elf_data: &[u8], argv: &[&str], envp: &[&str]) {
                 }
                 has_interp = true;
                 println!("[ELF] Interp loaded at base={:#x}, entry={:#x}", interp_base, interp_entry);
+                // Verify DYNAMIC section is readable
+                let dyn_va = interp_base + 0x94d88;
+                let dyn_vpn = VirtPageNum(dyn_va / PAGE_SIZE);
+                if let Some(pte) = proc.memory_set.page_table.translate(dyn_vpn) {
+                    let pa = pte.ppn().addr().0 + (dyn_va & (PAGE_SIZE - 1));
+                    let dyn_entries: &[(u64, u64)] = unsafe {
+                        core::slice::from_raw_parts(pa as *const (u64, u64), 5)
+                    };
+                    for (i, (tag, val)) in dyn_entries.iter().enumerate() {
+                        println!("[ELF]   DYN[{}]: tag={:#x} val={:#x}", i, tag, val);
+                    }
+                } else {
+                    println!("[ELF] ERROR: DYNAMIC at {:#x} not mapped!", dyn_va);
+                }
             } else {
                 drop(fs);
                 panic!("Dynamic linker {} not found!", interp_path);
