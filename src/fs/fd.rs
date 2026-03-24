@@ -73,11 +73,19 @@ impl FileDescriptor {
                     -22 // EINVAL
                 }
             }
+            FileDescriptor::Socket { .. } => {
+                // Read from TCP socket via smoltcp
+                loop {
+                    crate::net::poll_net();
+                    let ret = crate::net::tcp_read(buf);
+                    if ret > 0 {
+                        return ret;
+                    }
+                    // Spin wait briefly
+                    for _ in 0..1000 { core::hint::spin_loop(); }
+                }
+            }
             _ => -9, // EBADF
-        }
-    }
-
-    pub fn write(&mut self, buf: &[u8]) -> isize {
         match self {
             FileDescriptor::Stdout | FileDescriptor::Stderr => {
                 for &b in buf {
