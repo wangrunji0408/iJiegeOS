@@ -91,11 +91,11 @@ mod nr {
     pub const SET_ROBUST_LIST: usize = 99;
 }
 
+pub static mut LAST_SYSCALLS: [(usize, isize); 8] = [(0, 0); 8];
+pub static mut SC_IDX: usize = 0;
+
 pub fn syscall(id: usize, args: [usize; 6], cx: &mut TrapContext) -> isize {
     let result = syscall_inner(id, args, cx);
-    // Trace all syscalls
-    static mut LAST_SYSCALLS: [(usize, isize); 8] = [(0, 0); 8];
-    static mut SC_IDX: usize = 0;
     unsafe {
         LAST_SYSCALLS[SC_IDX % 8] = (id, result);
         SC_IDX += 1;

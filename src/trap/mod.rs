@@ -90,15 +90,11 @@ pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
                 println!("[kernel] Unhandled page fault at {:#x}, addr={:#x}", cx.sepc, stval);
                 // Print last syscalls
                 unsafe {
-                    extern "C" {
-                        static mut LAST_SYSCALLS: [(usize, isize); 8];
-                        static mut SC_IDX: usize;
-                    }
-                    let idx = SC_IDX;
+                    let idx = crate::syscall::SC_IDX;
                     println!("[kernel] Last syscalls:");
                     for i in 0..8 {
                         let j = (idx + i) % 8;
-                        let (id, ret) = LAST_SYSCALLS[j];
+                        let (id, ret) = crate::syscall::LAST_SYSCALLS[j];
                         if id != 0 {
                             println!("[kernel]   syscall {} -> {}", id, ret);
                         }
