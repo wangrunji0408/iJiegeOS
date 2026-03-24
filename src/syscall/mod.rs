@@ -853,7 +853,16 @@ fn sys_listen(sockfd: usize, backlog: i32) -> isize {
             let mut sock = handle.lock();
             sock.listening = true;
             sock.backlog = backlog;
-            println!("[NET] listen: fd={} backlog={}", sockfd, backlog);
+            let port = sock.local_port;
+            drop(sock);
+            drop(f);
+
+            // Create TCP listen socket in smoltcp
+            if let Some(smol_handle) = crate::net::tcp_listen(port) {
+                println!("[NET] listen: fd={} port={} (smoltcp handle created)", sockfd, port);
+            } else {
+                println!("[NET] listen: fd={} port={} (no network stack)", sockfd, port);
+            }
             return 0;
         }
     }
@@ -861,9 +870,59 @@ fn sys_listen(sockfd: usize, backlog: i32) -> isize {
 }
 
 fn sys_accept(sockfd: usize, addr: usize, addrlen: usize) -> isize {
-    // For now, block forever (no actual network)
-    // TODO: implement actual accept with virtio-net
-    -11 // EAGAIN
+    // Poll network and check for new connections
+    // For now, spin-poll the network stack
+    loop {
+        crate::net::poll_net();
+
+        // Check if smoltcp has an active connection
+        let has_connection = {
+            let mut net = crate::net::NET_STACK.lock();
+            if let Some(ref mut stack) = *net {
+                let mut found = false;
+                for (handle, socket) in stack.sockets.iter() {
+                    if let Some(tcp) = smoltcp::socket::tcp::Socket::downcast(&socket) {
+                        if tcp.is_active() && tcp.may_recv() {
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+                found
+            } else {
+                false
+            }
+        };
+
+        if has_connection {
+            // Create a new socket FD for the accepted connection
+            let new_sock = crate::net::SocketHandle::new(2, 1, 0);
+            let proc = crate::process::current_process();
+            let mut p = proc.lock();
+            let new_fd = p.alloc_fd();
+            p.fd_table[new_fd] = Some(alloc::sync::Arc::new(spin::Mutex::new(
+                crate::fs::FileDescriptor::Socket {
+                    handle: alloc::sync::Arc::new(spin::Mutex::new(new_sock))
+                }
+            )));
+
+            // Fill in remote address if requested
+            if addr != 0 {
+                let mut sa = [0u8; 16];
+                sa[0..2].copy_from_slice(&2u16.to_le_bytes()); // AF_INET
+                drop(p);
+                write_user_data(addr, &sa);
+                write_user_data(addrlen, &16u32.to_le_bytes());
+            }
+
+            return new_fd as isize;
+        }
+
+        // Brief sleep to avoid burning CPU
+        for _ in 0..10000 {
+            core::hint::spin_loop();
+        }
+    }
 }
 
 fn sys_connect(sockfd: usize, addr: usize, addrlen: usize) -> isize {
