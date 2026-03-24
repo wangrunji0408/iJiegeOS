@@ -34,13 +34,6 @@ pub enum FileDescriptor {
     DevNull,
 }
 
-#[derive(Debug, Clone)]
-pub struct EpollEvent {
-    pub fd: i32,
-    pub events: u32,
-    pub data: u64,
-}
-
 impl FileDescriptor {
     pub fn read(&mut self, buf: &mut [u8]) -> isize {
         match self {
