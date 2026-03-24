@@ -108,7 +108,21 @@ fn get_time_ms() -> i64 {
 pub fn poll_net() {
     if let Some(ref mut stack) = *NET_STACK.lock() {
         let timestamp = Instant::from_millis(get_time_ms());
-        stack.iface.poll(timestamp, &mut stack.device, &mut stack.sockets);
+        let result = stack.iface.poll(timestamp, &mut stack.device, &mut stack.sockets);
+
+        // Check if we got any network activity
+        static mut POLL_COUNT: u64 = 0;
+        unsafe {
+            POLL_COUNT += 1;
+            if POLL_COUNT % 100000 == 0 {
+                // Print network status periodically
+                let handle = *TCP_LISTEN_HANDLE.lock();
+                if let Some(handle) = handle {
+                    let socket = stack.sockets.get::<TcpSocket>(handle);
+                    crate::println!("[NET] poll #{}: tcp state={:?}, can_recv={}", POLL_COUNT, socket.state(), crate::drivers::virtio_net::can_recv());
+                }
+            }
+        }
     }
 }
 
