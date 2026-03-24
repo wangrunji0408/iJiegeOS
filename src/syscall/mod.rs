@@ -335,7 +335,6 @@ fn sys_mmap(addr: usize, len: usize, prot: usize, flags: usize, fd: i32, offset:
     } else if addr != 0 {
         addr & !(PAGE_SIZE - 1)
     } else {
-        // Pick an address from mmap region
         p.mmap_top -= len_aligned;
         p.mmap_top
     };
@@ -344,13 +343,14 @@ fn sys_mmap(addr: usize, len: usize, prot: usize, flags: usize, fd: i32, offset:
     if prot & 1 != 0 { pte_flags |= PTEFlags::R; }
     if prot & 2 != 0 { pte_flags |= PTEFlags::W; }
     if prot & 4 != 0 { pte_flags |= PTEFlags::X; }
+    // Always add write for initial setup
+    pte_flags |= PTEFlags::W;
 
     // Map pages
     let start_vpn = map_addr / PAGE_SIZE;
     let end_vpn = (map_addr + len_aligned) / PAGE_SIZE;
     for vpn in start_vpn..end_vpn {
         let vpn = VirtPageNum(vpn);
-        // If already mapped, unmap first
         if p.memory_set.page_table.translate(vpn).is_some() {
             p.memory_set.page_table.unmap(vpn);
         }
@@ -360,11 +360,45 @@ fn sys_mmap(addr: usize, len: usize, prot: usize, flags: usize, fd: i32, offset:
         core::mem::forget(frame);
     }
 
-    // If mapping a file, read data into it
-    if fd >= 0 && (flags & 0x20) == 0 {
-        // MAP_ANONYMOUS not set, read from fd
-        // TODO: implement file-backed mmap
+    // If file-backed mapping, copy file data
+    let is_anonymous = (flags & 0x20) != 0; // MAP_ANONYMOUS
+    if fd >= 0 && !is_anonymous {
+        if let Some(fd_obj) = p.get_fd(fd as usize) {
+            let f = fd_obj.lock();
+            if let crate::fs::FileDescriptor::File { data, .. } = &*f {
+                // Copy file data into mapped pages
+                let file_len = core::cmp::min(data.len().saturating_sub(offset), len);
+                if file_len > 0 {
+                    let file_data = data[offset..offset + file_len].to_vec();
+                    drop(f);
+                    drop(p);
+                    // Write file data to mapped pages
+                    let proc = crate::process::current_process();
+                    let p = proc.lock();
+                    let mut copied = 0;
+                    for vpn_val in start_vpn..end_vpn {
+                        if copied >= file_data.len() { break; }
+                        let vpn = VirtPageNum(vpn_val);
+                        if let Some(pte) = p.memory_set.page_table.translate(vpn) {
+                            let pa = pte.ppn().addr().0;
+                            let page_offset = if vpn_val == start_vpn { map_addr & (PAGE_SIZE - 1) } else { 0 };
+                            let copy_len = core::cmp::min(PAGE_SIZE - page_offset, file_data.len() - copied);
+                            unsafe {
+                                core::ptr::copy_nonoverlapping(
+                                    file_data[copied..].as_ptr(),
+                                    (pa + page_offset) as *mut u8,
+                                    copy_len,
+                                );
+                            }
+                            copied += copy_len;
+                        }
+                    }
+                    return map_addr as isize;
+                }
+            }
+        }
     }
+    drop(p);
 
     map_addr as isize
 }
