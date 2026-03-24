@@ -10,11 +10,7 @@ pub struct FrameTracker {
 
 impl FrameTracker {
     pub fn new(ppn: PhysPageNum) -> Self {
-        // Clear the frame using volatile writes to avoid optimization issues
-        let addr = ppn.addr().0 as *mut u64;
-        for i in 0..(PAGE_SIZE / 8) {
-            unsafe { core::ptr::write_volatile(addr.add(i), 0); }
-        }
+        ppn.as_bytes_mut().fill(0);
         Self { ppn }
     }
 }

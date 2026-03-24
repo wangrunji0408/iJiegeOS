@@ -137,30 +137,6 @@ impl PageTable {
             panic!("vpn {:?} is already mapped, pte={:#x}", vpn, pte.bits);
         }
         *pte = PageTableEntry::new(ppn, flags | PTEFlags::V | PTEFlags::A | PTEFlags::D);
-
-        // Verify by reading back through find_pte
-        let check = self.find_pte(vpn);
-        if let Some(cpte) = check {
-            if cpte.ppn().0 != ppn.0 {
-                crate::println!("[PT] BUG: map VPN={:?} PPN={:#x} but find_pte got PPN={:#x}",
-                    vpn, ppn.0, cpte.ppn().0);
-                // Debug: trace the path
-                let indices = vpn.indices();
-                crate::println!("[PT]   indices: {:?}", indices);
-                let root = self.root_ppn.as_pte_array();
-                crate::println!("[PT]   root[{}].bits = {:#x}", indices[0], root[indices[0]].bits);
-                if root[indices[0]].is_valid() {
-                    let mid = root[indices[0]].ppn().as_pte_array();
-                    crate::println!("[PT]   mid[{}].bits = {:#x}", indices[1], mid[indices[1]].bits);
-                    if mid[indices[1]].is_valid() {
-                        let leaf = mid[indices[1]].ppn().as_pte_array();
-                        crate::println!("[PT]   leaf[{}].bits = {:#x}", indices[2], leaf[indices[2]].bits);
-                    }
-                }
-            }
-        } else {
-            crate::println!("[PT] BUG: map VPN={:?} succeeded but find_pte returned None!", vpn);
-        }
     }
 
     pub fn unmap(&mut self, vpn: VirtPageNum) {
