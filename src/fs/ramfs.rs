@@ -2,7 +2,7 @@ use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 use spin::Mutex;
-use lazy_static::lazy_static;
+use alloc::format;
 
 /// A simple in-memory file system
 pub struct RamFs {
