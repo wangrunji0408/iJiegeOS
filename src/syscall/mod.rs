@@ -395,7 +395,8 @@ fn sys_getpid() -> isize {
 
 fn sys_getppid() -> isize {
     let proc = crate::process::current_process();
-    proc.lock().ppid as isize
+    let p = proc.lock();
+    p.ppid as isize
 }
 
 fn sys_gettid() -> isize {
@@ -534,10 +535,10 @@ fn sys_ioctl(fd: usize, request: usize, arg: usize) -> isize {
 fn sys_getcwd(buf: usize, size: usize) -> isize {
     let proc = crate::process::current_process();
     let p = proc.lock();
-    let cwd = p.cwd.as_bytes();
-    let len = core::cmp::min(cwd.len() + 1, size);
+    let cwd_bytes = p.cwd.as_bytes().to_vec();
     drop(p);
-    write_user_data(buf, &cwd[..len-1]);
+    let len = core::cmp::min(cwd_bytes.len() + 1, size);
+    write_user_data(buf, &cwd_bytes[..len-1]);
     write_user_data(buf + len - 1, &[0]);
     buf as isize
 }
