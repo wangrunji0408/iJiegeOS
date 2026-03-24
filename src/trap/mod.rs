@@ -73,7 +73,7 @@ pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
             crate::process::exit_current(-2);
         }
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
-            crate::arch::sbi::set_timer(get_time() + crate::config::CLOCK_FREQ / 100);
+            crate::arch::sbi::set_timer(get_time() + crate::config::CLOCK_FREQ as u64 / 100);
             crate::process::schedule();
         }
         Trap::Interrupt(Interrupt::SupervisorExternal) => {
