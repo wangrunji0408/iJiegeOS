@@ -655,9 +655,16 @@ fn sys_fstat(fd: usize, buf: usize) -> isize {
         drop(p);
         let f = fd_obj.lock();
         let mut stat = [0u8; 128];
+        // st_dev = 1
+        stat[0..8].copy_from_slice(&1u64.to_le_bytes());
+        // st_ino = unique per fd (use fd + some offset to make unique)
+        let ino = (fd as u64 + 1000) * 7919; // prime number for uniqueness
+        stat[8..16].copy_from_slice(&ino.to_le_bytes());
         // st_mode = regular file, 0644
         let mode: u32 = 0o100644;
         stat[16..20].copy_from_slice(&mode.to_le_bytes());
+        // st_nlink = 1
+        stat[24..28].copy_from_slice(&1u32.to_le_bytes());
         // st_size
         let size: u64 = match &*f {
             crate::fs::FileDescriptor::File { data, .. } => data.len() as u64,
