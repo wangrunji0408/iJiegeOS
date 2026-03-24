@@ -125,6 +125,7 @@ pub fn syscall(id: usize, args: [usize; 6], cx: &mut TrapContext) -> isize {
         nr::DUP3 => sys_dup3(args[0], args[1], args[2] as i32),
         nr::PIPE2 => sys_pipe2(args[0], args[1] as i32),
         nr::LSEEK => sys_lseek(args[0], args[1] as isize, args[2] as i32),
+        nr::PREAD64 => sys_pread64(args[0], args[1], args[2], args[3]),
         nr::PRLIMIT64 => sys_prlimit64(args[0], args[1], args[2], args[3]),
         nr::GETRANDOM => sys_getrandom(args[0], args[1], args[2]),
         nr::SCHED_YIELD => { crate::process::schedule(); 0 },
