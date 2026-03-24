@@ -1076,10 +1076,16 @@ fn sys_epoll_create1(flags: i32) -> isize {
 }
 
 fn sys_epoll_ctl(epfd: usize, op: i32, fd: usize, event: usize) -> isize {
-    let event_data = read_user_bytes(event, 12);
+    let event_data = read_user_bytes(event, 16);
     if event_data.len() < 12 { return -22; }
     let events = u32::from_le_bytes(event_data[0..4].try_into().unwrap());
-    let data = u64::from_le_bytes(event_data[4..12].try_into().unwrap());
+    // epoll_event on RISC-V/Linux has 4-byte padding between events and data
+    // struct epoll_event { u32 events; u32 __pad; u64 data; } (total 16 bytes)
+    let data = if event_data.len() >= 16 {
+        u64::from_le_bytes(event_data[8..16].try_into().unwrap())
+    } else {
+        u64::from_le_bytes(event_data[4..12].try_into().unwrap())
+    };
 
     println!("[syscall] epoll_ctl(epfd={}, op={}, fd={}, events={:#x}, data={:#x})", epfd, op, fd, events, data);
 
