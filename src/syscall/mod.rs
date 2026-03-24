@@ -1059,7 +1059,13 @@ fn sys_getsockname(sockfd: usize, addr: usize, addrlen: usize) -> isize {
 }
 
 fn sys_getpeername(sockfd: usize, addr: usize, addrlen: usize) -> isize { -107 } // ENOTCONN
-fn sys_sendto(sockfd: usize, buf: usize, len: usize, flags: i32, dest_addr: usize, addrlen: usize) -> isize { -38 }
+fn sys_sendto(sockfd: usize, buf: usize, len: usize, flags: i32, dest_addr: usize, addrlen: usize) -> isize {
+    let data = read_user_bytes(buf, len);
+    crate::net::poll_net();
+    let ret = crate::net::tcp_write(&data);
+    crate::net::poll_net();
+    ret
+}
 fn sys_recvfrom(sockfd: usize, buf: usize, len: usize, flags: i32, src_addr: usize, addrlen: usize) -> isize {
     // Read from TCP socket via smoltcp
     crate::net::poll_net();
