@@ -807,25 +807,211 @@ fn sys_kill(pid: usize, sig: usize) -> isize {
     0 // Stub
 }
 
-// Network syscalls - stubs for now
-fn sys_socket(domain: i32, socktype: i32, protocol: i32) -> isize { -38 }
-fn sys_bind(sockfd: usize, addr: usize, addrlen: usize) -> isize { -38 }
-fn sys_listen(sockfd: usize, backlog: i32) -> isize { -38 }
-fn sys_accept(sockfd: usize, addr: usize, addrlen: usize) -> isize { -38 }
-fn sys_connect(sockfd: usize, addr: usize, addrlen: usize) -> isize { -38 }
-fn sys_setsockopt(sockfd: usize, level: i32, optname: i32, optval: usize, optlen: usize) -> isize { 0 }
-fn sys_getsockopt(sockfd: usize, level: i32, optname: i32, optval: usize, optlen: usize) -> isize { -38 }
-fn sys_getsockname(sockfd: usize, addr: usize, addrlen: usize) -> isize { -38 }
-fn sys_getpeername(sockfd: usize, addr: usize, addrlen: usize) -> isize { -38 }
+// Network syscalls
+fn sys_socket(domain: i32, socktype: i32, protocol: i32) -> isize {
+    let sock = crate::net::SocketHandle::new(domain, socktype, protocol);
+    let proc = crate::process::current_process();
+    let mut p = proc.lock();
+    let fd = p.alloc_fd();
+    p.fd_table[fd] = Some(alloc::sync::Arc::new(spin::Mutex::new(
+        crate::fs::FileDescriptor::Socket { handle: alloc::sync::Arc::new(spin::Mutex::new(sock)) }
+    )));
+    fd as isize
+}
+
+fn sys_bind(sockfd: usize, addr: usize, addrlen: usize) -> isize {
+    let addr_data = read_user_bytes(addr, addrlen);
+    // Parse sockaddr_in: family(2) + port(2) + addr(4)
+    if addr_data.len() >= 8 {
+        let port = u16::from_be_bytes([addr_data[2], addr_data[3]]);
+        let ip = u32::from_be_bytes([addr_data[4], addr_data[5], addr_data[6], addr_data[7]]);
+        let proc = crate::process::current_process();
+        let p = proc.lock();
+        if let Some(fd_obj) = p.get_fd(sockfd) {
+            drop(p);
+            let mut f = fd_obj.lock();
+            if let crate::fs::FileDescriptor::Socket { handle } = &mut *f {
+                let mut sock = handle.lock();
+                sock.local_port = port;
+                sock.local_addr = ip;
+                sock.bound = true;
+                println!("[NET] bind: fd={} port={} addr={:#x}", sockfd, port, ip);
+                return 0;
+            }
+        }
+    }
+    -22 // EINVAL
+}
+
+fn sys_listen(sockfd: usize, backlog: i32) -> isize {
+    let proc = crate::process::current_process();
+    let p = proc.lock();
+    if let Some(fd_obj) = p.get_fd(sockfd) {
+        drop(p);
+        let mut f = fd_obj.lock();
+        if let crate::fs::FileDescriptor::Socket { handle } = &mut *f {
+            let mut sock = handle.lock();
+            sock.listening = true;
+            sock.backlog = backlog;
+            println!("[NET] listen: fd={} backlog={}", sockfd, backlog);
+            return 0;
+        }
+    }
+    -9
+}
+
+fn sys_accept(sockfd: usize, addr: usize, addrlen: usize) -> isize {
+    // For now, block forever (no actual network)
+    // TODO: implement actual accept with virtio-net
+    -11 // EAGAIN
+}
+
+fn sys_connect(sockfd: usize, addr: usize, addrlen: usize) -> isize {
+    -111 // ECONNREFUSED
+}
+
+fn sys_setsockopt(sockfd: usize, level: i32, optname: i32, optval: usize, optlen: usize) -> isize {
+    0 // Success stub
+}
+
+fn sys_getsockopt(sockfd: usize, level: i32, optname: i32, optval: usize, optlen: usize) -> isize {
+    if optlen != 0 {
+        // Write a default value
+        let val = 0i32;
+        write_user_data(optval, &val.to_le_bytes());
+        let len = 4u32;
+        let len_data = read_user_bytes(optlen, 4);
+        write_user_data(optlen, &4u32.to_le_bytes());
+    }
+    0
+}
+
+fn sys_getsockname(sockfd: usize, addr: usize, addrlen: usize) -> isize {
+    let proc = crate::process::current_process();
+    let p = proc.lock();
+    if let Some(fd_obj) = p.get_fd(sockfd) {
+        drop(p);
+        let f = fd_obj.lock();
+        if let crate::fs::FileDescriptor::Socket { handle } = &*f {
+            let sock = handle.lock();
+            // Write sockaddr_in
+            let mut sa = [0u8; 16];
+            sa[0..2].copy_from_slice(&2u16.to_le_bytes()); // AF_INET
+            sa[2..4].copy_from_slice(&sock.local_port.to_be_bytes());
+            sa[4..8].copy_from_slice(&sock.local_addr.to_be_bytes());
+            drop(sock);
+            drop(f);
+            write_user_data(addr, &sa);
+            write_user_data(addrlen, &16u32.to_le_bytes());
+            return 0;
+        }
+    }
+    -9
+}
+
+fn sys_getpeername(sockfd: usize, addr: usize, addrlen: usize) -> isize { -107 } // ENOTCONN
 fn sys_sendto(sockfd: usize, buf: usize, len: usize, flags: i32, dest_addr: usize, addrlen: usize) -> isize { -38 }
-fn sys_recvfrom(sockfd: usize, buf: usize, len: usize, flags: i32, src_addr: usize, addrlen: usize) -> isize { -38 }
+fn sys_recvfrom(sockfd: usize, buf: usize, len: usize, flags: i32, src_addr: usize, addrlen: usize) -> isize { -11 } // EAGAIN
 fn sys_shutdown_sock(sockfd: usize, how: i32) -> isize { 0 }
-fn sys_epoll_create1(flags: i32) -> isize { -38 }
-fn sys_epoll_ctl(epfd: usize, op: i32, fd: usize, event: usize) -> isize { -38 }
-fn sys_epoll_pwait(epfd: usize, events: usize, maxevents: i32, timeout: i32, sigmask: usize) -> isize { -38 }
-fn sys_eventfd2(initval: u32, flags: i32) -> isize { -38 }
-fn sys_ppoll(fds: usize, nfds: usize, tmo_p: usize, sigmask: usize) -> isize { -38 }
-fn sys_socketpair(domain: i32, socktype: i32, protocol: i32, sv: usize) -> isize { -38 }
+
+fn sys_epoll_create1(flags: i32) -> isize {
+    let proc = crate::process::current_process();
+    let mut p = proc.lock();
+    let fd = p.alloc_fd();
+    p.fd_table[fd] = Some(alloc::sync::Arc::new(spin::Mutex::new(
+        crate::fs::FileDescriptor::Epoll {
+            instance: alloc::sync::Arc::new(spin::Mutex::new(crate::net::EpollInstance::new()))
+        }
+    )));
+    fd as isize
+}
+
+fn sys_epoll_ctl(epfd: usize, op: i32, fd: usize, event: usize) -> isize {
+    let event_data = read_user_bytes(event, 12);
+    if event_data.len() < 12 { return -22; }
+    let events = u32::from_le_bytes(event_data[0..4].try_into().unwrap());
+    let data = u64::from_le_bytes(event_data[4..12].try_into().unwrap());
+
+    let proc = crate::process::current_process();
+    let p = proc.lock();
+    if let Some(fd_obj) = p.get_fd(epfd) {
+        drop(p);
+        let f = fd_obj.lock();
+        if let crate::fs::FileDescriptor::Epoll { instance } = &*f {
+            let mut inst = instance.lock();
+            match op {
+                1 => inst.add(fd as i32, events, data),    // EPOLL_CTL_ADD
+                2 => inst.delete(fd as i32),                // EPOLL_CTL_DEL
+                3 => inst.modify(fd as i32, events, data),  // EPOLL_CTL_MOD
+                _ => return -22,
+            }
+            return 0;
+        }
+    }
+    -9
+}
+
+fn sys_epoll_pwait(epfd: usize, events: usize, maxevents: i32, timeout: i32, sigmask: usize) -> isize {
+    // Simple implementation: return 0 events (timeout) for now
+    // TODO: implement actual event waiting with virtio-net
+    if timeout == 0 {
+        return 0; // Non-blocking, no events
+    }
+    // For positive timeout, busy-wait
+    if timeout > 0 {
+        let start = get_time_us();
+        let timeout_us = timeout as u64 * 1000;
+        while get_time_us() - start < timeout_us {
+            core::hint::spin_loop();
+        }
+    }
+    0 // No events
+}
+
+fn sys_eventfd2(initval: u32, flags: i32) -> isize {
+    let proc = crate::process::current_process();
+    let mut p = proc.lock();
+    let fd = p.alloc_fd();
+    p.fd_table[fd] = Some(alloc::sync::Arc::new(spin::Mutex::new(
+        crate::fs::FileDescriptor::EventFd { value: initval as u64 }
+    )));
+    fd as isize
+}
+
+fn sys_ppoll(fds: usize, nfds: usize, tmo_p: usize, sigmask: usize) -> isize {
+    // Simple poll: return 0 (timeout)
+    if tmo_p != 0 {
+        let data = read_user_bytes(tmo_p, 16);
+        let sec = u64::from_le_bytes(data[0..8].try_into().unwrap());
+        let nsec = u64::from_le_bytes(data[8..16].try_into().unwrap());
+        let timeout_us = sec * 1_000_000 + nsec / 1000;
+        if timeout_us > 0 {
+            let start = get_time_us();
+            while get_time_us() - start < timeout_us {
+                core::hint::spin_loop();
+            }
+        }
+    }
+    0
+}
+
+fn sys_socketpair(domain: i32, socktype: i32, protocol: i32, sv: usize) -> isize {
+    // Create two connected sockets
+    let proc = crate::process::current_process();
+    let mut p = proc.lock();
+    let fd0 = p.alloc_fd();
+    p.fd_table[fd0] = Some(alloc::sync::Arc::new(spin::Mutex::new(
+        crate::fs::FileDescriptor::Pipe { buffer: alloc::vec::Vec::new(), read_pos: 0 }
+    )));
+    let fd1 = p.alloc_fd();
+    p.fd_table[fd1] = p.fd_table[fd0].clone();
+    drop(p);
+    let mut buf = [0u8; 8];
+    buf[0..4].copy_from_slice(&(fd0 as u32).to_le_bytes());
+    buf[4..8].copy_from_slice(&(fd1 as u32).to_le_bytes());
+    write_user_data(sv, &buf);
+    0
+}
 
 fn sys_times(buf: usize) -> isize {
     if buf != 0 {
