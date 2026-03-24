@@ -479,22 +479,98 @@ fn sys_sigprocmask(_how: usize, _set: usize, _oldset: usize, _sigsetsize: usize)
 
 fn sys_openat(dirfd: i32, pathname_ptr: usize, flags: i32, mode: u32) -> isize {
     let pathname = read_user_cstr(pathname_ptr);
+
+    // Resolve path relative to cwd
+    let full_path = if pathname.starts_with('/') {
+        pathname.clone()
+    } else {
+        let proc = crate::process::current_process();
+        let p = proc.lock();
+        let cwd = p.cwd.clone();
+        drop(p);
+        if cwd == "/" {
+            alloc::format!("/{}", pathname)
+        } else {
+            alloc::format!("{}/{}", cwd, pathname)
+        }
+    };
+
     // Handle /dev/null
-    if pathname == "/dev/null" {
+    if full_path == "/dev/null" {
         let proc = crate::process::current_process();
         let mut p = proc.lock();
         let fd = p.alloc_fd();
         p.fd_table[fd] = Some(alloc::sync::Arc::new(spin::Mutex::new(crate::fs::FileDescriptor::DevNull)));
         return fd as isize;
     }
-    // Handle /proc/self paths
-    if pathname.starts_with("/proc") {
-        // Return -ENOENT for most proc files
+
+    // Handle /proc paths
+    if full_path.starts_with("/proc") {
         return -2;
     }
-    // Try to open from rootfs
-    // For now, return -ENOENT for unknown files
-    println!("[syscall] openat: {} (flags={:#x})", pathname, flags);
+
+    // Check O_CREAT flag
+    let o_creat = (flags & 0o100) != 0;
+    let o_wronly = (flags & 0o3) == 1;
+    let o_rdwr = (flags & 0o3) == 2;
+    let o_trunc = (flags & 0o1000) != 0;
+    let o_append = (flags & 0o2000) != 0;
+
+    // Try to open from ramfs
+    let fs = crate::fs::RAMFS.lock();
+    if let Some(file) = fs.get_file(&full_path) {
+        if file.is_dir {
+            // Opening a directory
+            let proc = crate::process::current_process();
+            let mut p = proc.lock();
+            let fd = p.alloc_fd();
+            p.fd_table[fd] = Some(alloc::sync::Arc::new(spin::Mutex::new(
+                crate::fs::FileDescriptor::File {
+                    data: alloc::vec::Vec::new(),
+                    offset: 0,
+                    path: full_path,
+                }
+            )));
+            return fd as isize;
+        }
+        let data = if o_trunc {
+            alloc::vec::Vec::new()
+        } else {
+            file.data.to_vec()
+        };
+        drop(fs);
+
+        let offset = if o_append { data.len() } else { 0 };
+        let proc = crate::process::current_process();
+        let mut p = proc.lock();
+        let fd = p.alloc_fd();
+        p.fd_table[fd] = Some(alloc::sync::Arc::new(spin::Mutex::new(
+            crate::fs::FileDescriptor::File {
+                data,
+                offset,
+                path: full_path,
+            }
+        )));
+        return fd as isize;
+    }
+    drop(fs);
+
+    // If O_CREAT, create a new empty file
+    if o_creat {
+        let proc = crate::process::current_process();
+        let mut p = proc.lock();
+        let fd = p.alloc_fd();
+        p.fd_table[fd] = Some(alloc::sync::Arc::new(spin::Mutex::new(
+            crate::fs::FileDescriptor::File {
+                data: alloc::vec::Vec::new(),
+                offset: 0,
+                path: full_path,
+            }
+        )));
+        return fd as isize;
+    }
+
+    // Not found
     -2 // ENOENT
 }
 
