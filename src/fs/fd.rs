@@ -116,6 +116,22 @@ impl FileDescriptor {
                     -22 // EINVAL
                 }
             }
+            FileDescriptor::Socket { .. } => {
+                // Write to TCP socket via smoltcp
+                let mut sent = 0;
+                while sent < buf.len() {
+                    crate::net::poll_net();
+                    let ret = crate::net::tcp_write(&buf[sent..]);
+                    if ret > 0 {
+                        sent += ret as usize;
+                    } else {
+                        for _ in 0..1000 { core::hint::spin_loop(); }
+                    }
+                }
+                // Flush
+                crate::net::poll_net();
+                sent as isize
+            }
             _ => -9, // EBADF
         }
     }
