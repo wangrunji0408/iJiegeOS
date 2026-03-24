@@ -296,63 +296,39 @@ fn map_and_copy(page_table: &mut PageTable, start_va: usize, end_va: usize, data
     let start_vpn = VirtAddr(start_va).floor();
     let end_vpn = VirtAddr(end_va).ceil();
     let total_pages = end_vpn.0 - start_vpn.0;
-
-    println!("[ELF]   mapping {} pages, data {} bytes", total_pages, data.len());
-
-    for vpn_val in start_vpn.0..end_vpn.0 {
-        let vpn = VirtPageNum(vpn_val);
-        if page_table.translate(vpn).is_some() {
-            continue;
-        }
-        let frame = crate::mm::frame_alloc().expect("OOM in ELF load");
-        let ppn = frame.ppn;
-        page_table.map(vpn, ppn, perm | PTEFlags::W);
-        // Verify mapping immediately
-        let check = page_table.translate(vpn);
-        if check.is_none() || check.unwrap().ppn().addr().0 == 0 {
-            println!("[ELF] BUG: map succeeded but translate failed! VPN={:#x} expected PPN={:#x}", vpn_val, ppn.0);
-            if let Some(pte) = check {
-                println!("[ELF]   got pte.bits={:#x} ppn={:#x}", pte.bits, pte.ppn().0);
-            }
-        }
-        core::mem::forget(frame);
-    }
-
-    println!("[ELF]   pages mapped, copying data...");
-
-    if data.is_empty() { return; }
-    let mut copied = 0;
     let page_offset = start_va & (PAGE_SIZE - 1);
+    let mut copied = 0;
+
+    println!("[ELF]   mapping+copying {} pages, data {} bytes", total_pages, data.len());
 
     for vpn_val in start_vpn.0..end_vpn.0 {
-        if copied >= data.len() { break; }
         let vpn = VirtPageNum(vpn_val);
-        let pte = page_table.translate(vpn);
-        if pte.is_none() {
-            println!("[ELF] ERROR: VPN {:#x} not mapped!", vpn_val);
-            return;
-        }
-        let pte = pte.unwrap();
-        let pa = pte.ppn().addr().0;
-        if pa == 0 {
-            println!("[ELF] ERROR: VPN {:#x} mapped to PA=0! pte.bits={:#x}", vpn_val, pte.bits);
-            return;
-        }
-        if vpn_val == start_vpn.0 || vpn_val == start_vpn.0 + 1 {
-            println!("[ELF]   VPN={:#x} -> PA={:#x}", vpn_val, pa);
-        }
-        let dst_start = if vpn_val == start_vpn.0 { page_offset } else { 0 };
-        let copy_len = core::cmp::min(PAGE_SIZE - dst_start, data.len() - copied);
-        unsafe {
-            let dst = (pa + dst_start) as *mut u8;
-            let src = data[copied..].as_ptr();
-            for i in 0..copy_len {
-                *dst.add(i) = *src.add(i);
+        let ppn = if let Some(pte) = page_table.translate(vpn) {
+            pte.ppn()
+        } else {
+            let frame = crate::mm::frame_alloc().expect("OOM in ELF load");
+            let ppn = frame.ppn;
+            page_table.map(vpn, ppn, perm | PTEFlags::W);
+            core::mem::forget(frame);
+            ppn
+        };
+
+        // Copy data for this page
+        if copied < data.len() {
+            let pa = ppn.addr().0;
+            let dst_start = if vpn_val == start_vpn.0 { page_offset } else { 0 };
+            let copy_len = core::cmp::min(PAGE_SIZE - dst_start, data.len() - copied);
+            unsafe {
+                core::ptr::copy_nonoverlapping(
+                    data[copied..].as_ptr(),
+                    (pa + dst_start) as *mut u8,
+                    copy_len,
+                );
             }
+            copied += copy_len;
         }
-        copied += copy_len;
     }
-    println!("[ELF]   data copied: {} bytes", copied);
+    println!("[ELF]   done, {} bytes copied", copied);
 }
 
 fn trap_return() {
