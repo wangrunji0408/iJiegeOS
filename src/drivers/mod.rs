@@ -1,3 +1,30 @@
-pub fn init(_dtb: usize) {
-    // TODO: Parse DTB and init virtio devices
+mod virtio_hal;
+pub mod virtio_net;
+
+use virtio_drivers::transport::mmio::{MmioTransport, VirtIOHeader};
+use virtio_drivers::transport::DeviceType;
+
+pub fn init(dtb: usize) {
+    // Probe VirtIO MMIO devices at known QEMU virt addresses
+    // QEMU virt: 8 virtio MMIO slots at 0x10001000 - 0x10008000
+    for i in 0..8 {
+        let addr = 0x10001000 + i * 0x1000;
+        probe_virtio_mmio(addr);
+    }
+}
+
+fn probe_virtio_mmio(addr: usize) {
+    let header = unsafe { &mut *(addr as *mut VirtIOHeader) };
+
+    if let Ok(transport) = unsafe { MmioTransport::new(core::ptr::NonNull::from(header)) } {
+        let device_type = transport.device_type();
+        println!("[VIRTIO] Found {:?} at {:#x}", device_type, addr);
+
+        match device_type {
+            DeviceType::Network => {
+                virtio_net::init(transport);
+            }
+            _ => {}
+        }
+    }
 }

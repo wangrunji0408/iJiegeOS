@@ -1,19 +1,19 @@
+use alloc::vec;
 use alloc::vec::Vec;
 use spin::Mutex;
 use lazy_static::lazy_static;
-use virtio_drivers::device::net::{VirtIONet, TxBuffer};
+use virtio_drivers::device::net::VirtIONet;
 use virtio_drivers::transport::mmio::MmioTransport;
 use super::virtio_hal::HalImpl;
 
-const NET_QUEUE_SIZE: usize = 16;
+const NET_BUF_LEN: usize = 4096;
 
 lazy_static! {
-    pub static ref VIRTIO_NET: Mutex<Option<VirtIONet<HalImpl, MmioTransport, NET_QUEUE_SIZE>>> =
-        Mutex::new(None);
+    pub static ref VIRTIO_NET: Mutex<Option<VirtIONet<HalImpl, MmioTransport>>> = Mutex::new(None);
 }
 
 pub fn init(transport: MmioTransport) {
-    match VirtIONet::<HalImpl, MmioTransport, NET_QUEUE_SIZE>::new(transport, 4096) {
+    match VirtIONet::<HalImpl, MmioTransport>::new(transport, NET_BUF_LEN) {
         Ok(net) => {
             let mac = net.mac_address();
             println!("[NET] VirtIO-net initialized, MAC: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
@@ -34,15 +34,11 @@ pub fn can_recv() -> bool {
     }
 }
 
-pub fn recv() -> Option<Vec<u8>> {
+pub fn recv(buf: &mut [u8]) -> Option<usize> {
     if let Some(ref mut net) = *VIRTIO_NET.lock() {
         if net.can_recv() {
-            match net.receive() {
-                Ok(rx_buf) => {
-                    let data = rx_buf.packet().to_vec();
-                    net.recycle_rx_buffer(rx_buf).ok();
-                    Some(data)
-                }
+            match net.receive_wait(buf) {
+                Ok(len) => Some(len),
                 Err(_) => None,
             }
         } else {
@@ -55,8 +51,7 @@ pub fn recv() -> Option<Vec<u8>> {
 
 pub fn send(buf: &[u8]) -> bool {
     if let Some(ref mut net) = *VIRTIO_NET.lock() {
-        let tx_buf = TxBuffer::from(buf);
-        match net.send(tx_buf) {
+        match net.send(buf) {
             Ok(_) => true,
             Err(_) => false,
         }
