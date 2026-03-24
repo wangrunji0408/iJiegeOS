@@ -50,6 +50,14 @@ pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
                 "[kernel] PageFault at {:#x}, bad addr = {:#x}, scause = {:?}",
                 cx.sepc, stval, scause.cause()
             );
+            println!(
+                "[kernel] regs: ra={:#x} sp={:#x} gp={:#x} tp={:#x}",
+                cx.x[1], cx.x[2], cx.x[3], cx.x[4]
+            );
+            println!(
+                "[kernel] a0={:#x} a1={:#x} a2={:#x} t1(x6)={:#x}",
+                cx.x[10], cx.x[11], cx.x[12], cx.x[6]
+            );
             // Try to handle page fault
             let handled = crate::process::handle_page_fault(stval, scause.cause());
             if !handled {
