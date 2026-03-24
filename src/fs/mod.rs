@@ -326,15 +326,18 @@ fn map_and_copy(page_table: &mut PageTable, start_va: usize, end_va: usize, data
         }
         let pte = pte.unwrap();
         let pa = pte.ppn().addr().0;
-        if vpn_val == start_vpn.0 {
-            println!("[ELF]   first page: VPN={:#x} -> PA={:#x}", vpn_val, pa);
+        if pa == 0 {
+            println!("[ELF] ERROR: VPN {:#x} mapped to PA=0! pte.bits={:#x}", vpn_val, pte.bits);
+            return;
+        }
+        if vpn_val == start_vpn.0 || vpn_val == start_vpn.0 + 1 {
+            println!("[ELF]   VPN={:#x} -> PA={:#x}", vpn_val, pa);
         }
         let dst_start = if vpn_val == start_vpn.0 { page_offset } else { 0 };
         let copy_len = core::cmp::min(PAGE_SIZE - dst_start, data.len() - copied);
         unsafe {
             let dst = (pa + dst_start) as *mut u8;
             let src = data[copied..].as_ptr();
-            // Copy byte by byte to find exact crash location
             for i in 0..copy_len {
                 *dst.add(i) = *src.add(i);
             }
