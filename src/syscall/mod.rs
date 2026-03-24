@@ -752,9 +752,6 @@ fn sys_fstatat(_dirfd: i32, pathname_ptr: usize, buf: usize, _flags: i32) -> isi
     }
     -2 // ENOENT
 }
-    drop(fs);
-    -2 // ENOENT
-}
 
 fn sys_statx(_dirfd: i32, _pathname_ptr: usize, _flags: i32, _mask: u32, _buf: usize) -> isize {
     -2 // ENOENT
