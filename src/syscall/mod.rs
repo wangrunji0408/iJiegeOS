@@ -204,6 +204,10 @@ fn syscall_inner(id: usize, args: [usize; 6], cx: &mut TrapContext) -> isize {
         nr::SYSLOG => 0, // stub
         258 => 0, // timer_settime stub
         123 => 0, // sched_setaffinity stub
+        0 => 0,   // io_setup stub (AIO)
+        1 => 0,   // io_destroy stub
+        2 => 0,   // io_submit stub
+        4 => 0,   // io_getevents stub
         54 => 0,  // fchownat stub
         55 => 0,  // fchown stub
         46 => 0,  // fchmod stub
