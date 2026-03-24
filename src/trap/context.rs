@@ -1,5 +1,3 @@
-use riscv::register::sstatus::{self, Sstatus, SPP};
-
 #[repr(C)]
 #[derive(Clone, Debug)]
 pub struct TrapContext {
@@ -29,13 +27,16 @@ impl TrapContext {
         kernel_sp: usize,
         trap_handler: usize,
     ) -> Self {
-        let mut sstatus = sstatus::read();
-        sstatus.set_spp(SPP::User);
-        // Enable interrupts in user mode
-        sstatus.set_spie(true);
+        // Read current sstatus, set SPP to User (bit 8 = 0), SPIE (bit 5 = 1)
+        let sstatus: usize;
+        unsafe {
+            core::arch::asm!("csrr {}, sstatus", out(reg) sstatus);
+        }
+        // Clear SPP (bit 8), set SPIE (bit 5)
+        let sstatus = (sstatus & !(1 << 8)) | (1 << 5);
         let mut cx = Self {
             x: [0; 32],
-            sstatus: unsafe { core::mem::transmute::<Sstatus, usize>(sstatus) },
+            sstatus,
             sepc: entry,
             kernel_satp,
             kernel_sp,
