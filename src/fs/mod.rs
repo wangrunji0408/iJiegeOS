@@ -17,12 +17,11 @@ pub fn init() {
     init_ramfs();
 }
 
-/// Load the init process - nginx via dynamic linker
+/// Load the init process
 pub fn load_init_process() {
-    let nginx_path = "/usr/sbin/nginx";
-    let argv = &[nginx_path, "-c", "/etc/nginx/nginx.conf"];
-    let envp = &["PATH=/usr/sbin:/usr/bin:/bin", "HOME=/"];
-    load_elf_from_ramfs(nginx_path, argv, envp);
+    // Use our simple static HTTP server for testing
+    let http_elf = include_bytes!("../../httpserver.elf");
+    load_elf_process(http_elf, &["/httpserver"], &["PATH=/bin"]);
 }
 
 pub fn load_elf_from_ramfs(path: &str, argv: &[&str], envp: &[&str]) {
