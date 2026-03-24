@@ -1,0 +1,25 @@
+[package]
+name = "jiegeos"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bitflags = "2"
+log = "0.4"
+spin = "0.9"
+lazy_static = { version = "1", features = ["spin_no_std"] }
+buddy_system_allocator = "0.11"
+xmas-elf = "0.9"
+virtio-drivers = "0.7"
+fdt = "0.1"
+riscv = "0.11"
+
+[profile.release]
+debug = true
+opt-level = 2
+lto = false
+panic = "abort"
+
+[profile.dev]
+opt-level = 1
+panic = "abort"
