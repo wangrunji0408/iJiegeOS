@@ -133,7 +133,8 @@ pub fn check_tcp_accept() -> bool {
     if let Some(handle) = handle {
         if let Some(ref mut stack) = *NET_STACK.lock() {
             let socket = stack.sockets.get::<TcpSocket>(handle);
-            return socket.is_active();
+            // Connection is accepted when state moves from Listen to established
+            return socket.state() == smoltcp::socket::tcp::State::Established;
         }
     }
     false
@@ -171,4 +172,28 @@ pub fn tcp_write(data: &[u8]) -> isize {
         }
     }
     -11
+}
+
+/// Close the TCP connection and re-listen
+pub fn tcp_close_and_relisten(port: u16) {
+    let handle = *TCP_LISTEN_HANDLE.lock();
+    if let Some(handle) = handle {
+        if let Some(ref mut stack) = *NET_STACK.lock() {
+            let socket = stack.sockets.get_mut::<TcpSocket>(handle);
+            socket.close();
+            // Poll to send FIN
+            let timestamp = Instant::from_millis(get_time_ms());
+            stack.iface.poll(timestamp, &mut stack.device, &mut stack.sockets);
+            // Wait for close to complete
+            for _ in 0..100 {
+                let timestamp = Instant::from_millis(get_time_ms());
+                stack.iface.poll(timestamp, &mut stack.device, &mut stack.sockets);
+                for _ in 0..10000 { core::hint::spin_loop(); }
+            }
+            // Re-listen
+            let socket = stack.sockets.get_mut::<TcpSocket>(handle);
+            socket.abort();
+            socket.listen(port).ok();
+        }
+    }
 }
