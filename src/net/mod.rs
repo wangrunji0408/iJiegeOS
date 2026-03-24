@@ -124,3 +124,54 @@ pub fn tcp_listen(port: u16) -> Option<SmolSocketHandle> {
         None
     }
 }
+
+/// Check if any TCP socket has accepted a new connection
+pub fn check_tcp_accept() -> bool {
+    if let Some(ref mut stack) = *NET_STACK.lock() {
+        for (_handle, socket) in stack.sockets.iter() {
+            let tcp = smoltcp::socket::tcp::Socket::downcast(&socket);
+            if let Some(tcp) = tcp {
+                if tcp.is_active() {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Read data from the TCP socket
+pub fn tcp_read(buf: &mut [u8]) -> isize {
+    if let Some(ref mut stack) = *NET_STACK.lock() {
+        for (_handle, socket) in stack.sockets.iter_mut() {
+            let tcp = smoltcp::socket::tcp::Socket::downcast_mut(&mut socket);
+            if let Some(tcp) = tcp {
+                if tcp.can_recv() {
+                    match tcp.recv_slice(buf) {
+                        Ok(len) => return len as isize,
+                        Err(_) => return -11, // EAGAIN
+                    }
+                }
+            }
+        }
+    }
+    -11 // EAGAIN
+}
+
+/// Write data to the TCP socket
+pub fn tcp_write(data: &[u8]) -> isize {
+    if let Some(ref mut stack) = *NET_STACK.lock() {
+        for (_handle, socket) in stack.sockets.iter_mut() {
+            let tcp = smoltcp::socket::tcp::Socket::downcast_mut(&mut socket);
+            if let Some(tcp) = tcp {
+                if tcp.can_send() {
+                    match tcp.send_slice(data) {
+                        Ok(len) => return len as isize,
+                        Err(_) => return -11,
+                    }
+                }
+            }
+        }
+    }
+    -11
+}
