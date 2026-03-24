@@ -29,8 +29,8 @@ pub struct NetStack {
 /// Adapter between virtio-net driver and smoltcp Device trait
 pub struct VirtioSmolDevice;
 
-struct VirtioRxToken(Vec<u8>);
-struct VirtioTxToken;
+pub struct VirtioRxToken(Vec<u8>);
+pub struct VirtioTxToken;
 
 impl RxToken for VirtioRxToken {
     fn consume<R, F>(mut self, f: F) -> R where F: FnOnce(&mut [u8]) -> R {
