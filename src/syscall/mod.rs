@@ -94,7 +94,13 @@ mod nr {
 pub fn syscall(id: usize, args: [usize; 6], cx: &mut TrapContext) -> isize {
     match id {
         nr::WRITE => sys_write(args[0], args[1], args[2]),
-        nr::READ => sys_read(args[0], args[1], args[2]),
+        nr::READ => {
+            let ret = sys_read(args[0], args[1], args[2]);
+            if args[0] >= 3 {
+                println!("[syscall] read(fd={}, len={}) = {}", args[0], args[2], ret);
+            }
+            ret
+        }
         nr::WRITEV => sys_writev(args[0], args[1], args[2]),
         nr::READV => sys_readv(args[0], args[1], args[2]),
         nr::CLOSE => sys_close(args[0]),
