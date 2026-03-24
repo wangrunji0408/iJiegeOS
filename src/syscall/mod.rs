@@ -1206,6 +1206,29 @@ fn sys_pread64(fd: usize, buf_ptr: usize, count: usize, offset: usize) -> isize 
     }
 }
 
+fn sys_pwrite64(fd: usize, buf_ptr: usize, count: usize, offset: usize) -> isize {
+    let data = read_user_bytes(buf_ptr, count);
+    let proc = crate::process::current_process();
+    let p = proc.lock();
+    if let Some(fd_obj) = p.get_fd(fd) {
+        drop(p);
+        let mut f = fd_obj.lock();
+        match &mut *f {
+            crate::fs::FileDescriptor::File { data: file_data, .. } => {
+                let end = offset + data.len();
+                if end > file_data.len() {
+                    file_data.resize(end, 0);
+                }
+                file_data[offset..end].copy_from_slice(&data);
+                data.len() as isize
+            }
+            _ => -9,
+        }
+    } else {
+        -9
+    }
+}
+
 fn sys_readlinkat(dirfd: i32, pathname_ptr: usize, buf: usize, bufsiz: usize) -> isize {
     let pathname = read_user_cstr(pathname_ptr);
     if pathname == "/proc/self/exe" {
