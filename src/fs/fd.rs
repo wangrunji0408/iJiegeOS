@@ -1,0 +1,119 @@
+use alloc::vec::Vec;
+
+#[derive(Debug)]
+pub enum FileDescriptor {
+    Stdin,
+    Stdout,
+    Stderr,
+    /// A pipe endpoint
+    Pipe {
+        buffer: Vec<u8>,
+        read_pos: usize,
+    },
+    /// A socket
+    Socket {
+        fd: usize,
+    },
+    /// An epoll instance
+    Epoll {
+        events: Vec<EpollEvent>,
+    },
+    /// eventfd
+    EventFd {
+        value: u64,
+    },
+    /// Regular file (backed by in-memory data)
+    File {
+        data: Vec<u8>,
+        offset: usize,
+        path: alloc::string::String,
+    },
+    /// /dev/null
+    DevNull,
+}
+
+#[derive(Debug, Clone)]
+pub struct EpollEvent {
+    pub fd: i32,
+    pub events: u32,
+    pub data: u64,
+}
+
+impl FileDescriptor {
+    pub fn read(&mut self, buf: &mut [u8]) -> isize {
+        match self {
+            FileDescriptor::Stdin => {
+                // Read from SBI console
+                for b in buf.iter_mut() {
+                    if let Some(c) = crate::arch::sbi::console_getchar() {
+                        *b = c;
+                    } else {
+                        return 0;
+                    }
+                }
+                buf.len() as isize
+            }
+            FileDescriptor::File { data, offset, .. } => {
+                let remaining = data.len() - *offset;
+                let len = core::cmp::min(buf.len(), remaining);
+                buf[..len].copy_from_slice(&data[*offset..*offset + len]);
+                *offset += len;
+                len as isize
+            }
+            FileDescriptor::Pipe { buffer, read_pos } => {
+                let remaining = buffer.len() - *read_pos;
+                let len = core::cmp::min(buf.len(), remaining);
+                buf[..len].copy_from_slice(&buffer[*read_pos..*read_pos + len]);
+                *read_pos += len;
+                len as isize
+            }
+            FileDescriptor::DevNull => 0,
+            FileDescriptor::EventFd { value } => {
+                if buf.len() >= 8 {
+                    let bytes = value.to_le_bytes();
+                    buf[..8].copy_from_slice(&bytes);
+                    *value = 0;
+                    8
+                } else {
+                    -22 // EINVAL
+                }
+            }
+            _ => -9, // EBADF
+        }
+    }
+
+    pub fn write(&mut self, buf: &[u8]) -> isize {
+        match self {
+            FileDescriptor::Stdout | FileDescriptor::Stderr => {
+                for &b in buf {
+                    crate::arch::sbi::console_putchar(b);
+                }
+                buf.len() as isize
+            }
+            FileDescriptor::File { data, offset, .. } => {
+                let end = *offset + buf.len();
+                if end > data.len() {
+                    data.resize(end, 0);
+                }
+                data[*offset..end].copy_from_slice(buf);
+                *offset = end;
+                buf.len() as isize
+            }
+            FileDescriptor::Pipe { buffer, .. } => {
+                buffer.extend_from_slice(buf);
+                buf.len() as isize
+            }
+            FileDescriptor::DevNull => buf.len() as isize,
+            FileDescriptor::EventFd { value } => {
+                if buf.len() >= 8 {
+                    let v = u64::from_le_bytes(buf[..8].try_into().unwrap());
+                    *value += v;
+                    8
+                } else {
+                    -22 // EINVAL
+                }
+            }
+            _ => -9, // EBADF
+        }
+    }
+}
