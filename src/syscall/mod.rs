@@ -871,28 +871,11 @@ fn sys_listen(sockfd: usize, backlog: i32) -> isize {
 
 fn sys_accept(sockfd: usize, addr: usize, addrlen: usize) -> isize {
     // Poll network and check for new connections
-    // For now, spin-poll the network stack
     loop {
         crate::net::poll_net();
 
-        // Check if smoltcp has an active connection
-        let has_connection = {
-            let mut net = crate::net::NET_STACK.lock();
-            if let Some(ref mut stack) = *net {
-                let mut found = false;
-                for (handle, socket) in stack.sockets.iter() {
-                    if let Some(tcp) = smoltcp::socket::tcp::Socket::downcast(&socket) {
-                        if tcp.is_active() && tcp.may_recv() {
-                            found = true;
-                            break;
-                        }
-                    }
-                }
-                found
-            } else {
-                false
-            }
-        };
+        // Check if smoltcp has accepted a connection
+        let has_connection = crate::net::check_tcp_accept();
 
         if has_connection {
             // Create a new socket FD for the accepted connection
@@ -906,19 +889,18 @@ fn sys_accept(sockfd: usize, addr: usize, addrlen: usize) -> isize {
                 }
             )));
 
-            // Fill in remote address if requested
             if addr != 0 {
                 let mut sa = [0u8; 16];
-                sa[0..2].copy_from_slice(&2u16.to_le_bytes()); // AF_INET
+                sa[0..2].copy_from_slice(&2u16.to_le_bytes());
                 drop(p);
                 write_user_data(addr, &sa);
                 write_user_data(addrlen, &16u32.to_le_bytes());
             }
 
+            println!("[NET] accept: new connection on fd={}", new_fd);
             return new_fd as isize;
         }
 
-        // Brief sleep to avoid burning CPU
         for _ in 0..10000 {
             core::hint::spin_loop();
         }
