@@ -97,6 +97,11 @@ pub fn init_ramfs() {
     fs.add_file("/var/log/nginx/.keep", b"");
     fs.add_file("/var/run/.keep", b"");
     fs.add_file("/var/lib/nginx/tmp/.keep", b"");
+    fs.add_file("/var/lib/nginx/tmp/client_body/.keep", b"");
+    fs.add_file("/var/lib/nginx/tmp/proxy/.keep", b"");
+    fs.add_file("/var/lib/nginx/tmp/fastcgi/.keep", b"");
+    fs.add_file("/var/lib/nginx/tmp/uwsgi/.keep", b"");
+    fs.add_file("/var/lib/nginx/tmp/scgi/.keep", b"");
     fs.add_file("/tmp/.keep", b"");
 
     // Add /dev/null as a marker
