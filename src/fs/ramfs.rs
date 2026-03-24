@@ -89,6 +89,7 @@ pub fn init_ramfs() {
     fs.add_file("/etc/passwd", b"root:x:0:0:root:/root:/bin/sh\nnginx:x:100:101:nginx:/var/lib/nginx:/sbin/nologin\nnobody:x:65534:65534:nobody:/:/sbin/nologin\n");
     fs.add_file("/etc/group", b"root:x:0:\nnginx:x:101:\nnogroup:x:65534:\n");
     fs.add_file("/etc/localtime", b""); // empty timezone = UTC
+    fs.add_file("/etc/ssl/openssl.cnf", b"# minimal openssl config\nopenssl_conf = openssl_init\n[openssl_init]\n");
     fs.add_file("/etc/hosts", b"127.0.0.1 localhost\n");
     fs.add_file("/etc/resolv.conf", b"nameserver 10.0.2.3\n");
 
