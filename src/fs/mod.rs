@@ -124,8 +124,19 @@ pub fn load_elf_process(elf_data: &[u8], argv: &[&str], envp: &[&str]) {
             // Load the dynamic linker
             let fs = RAMFS.lock();
             if let Some(interp_file) = fs.get_file(interp_path) {
-                let interp_data = interp_file.data;
+                let interp_data_raw = interp_file.data;
                 drop(fs);
+
+                // Copy to aligned buffer (xmas-elf requires alignment)
+                let mut interp_data_aligned: alloc::vec::Vec<u64> = alloc::vec![0u64; (interp_data_raw.len() + 7) / 8];
+                let interp_data_bytes = unsafe {
+                    core::slice::from_raw_parts_mut(
+                        interp_data_aligned.as_mut_ptr() as *mut u8,
+                        interp_data_raw.len(),
+                    )
+                };
+                interp_data_bytes.copy_from_slice(interp_data_raw);
+                let interp_data = &interp_data_bytes[..interp_data_raw.len()];
 
                 let interp_elf = ElfFile::new(interp_data).expect("Invalid interp ELF");
                 interp_base = 0x7000_0000; // Load interp at this base
