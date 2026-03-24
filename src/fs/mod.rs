@@ -12,11 +12,11 @@ pub fn init() {
     // File system initialization
 }
 
-/// Load the init process from the embedded initramfs
+/// Load the init process - a simple test program
 pub fn load_init_process() {
-    // We'll load from the virtio block device or embedded data
-    // For now, load the test program
-    load_elf_process(include_bytes!("../../rootfs/usr/sbin/nginx"), &["/usr/sbin/nginx\0"], &["PATH=/usr/sbin:/usr/bin:/bin\0"]);
+    // Load the test ELF binary compiled from C
+    let test_elf = include_bytes!("../../test_hello.elf");
+    load_elf_process(test_elf, &["/init"], &["PATH=/bin"]);
 }
 
 pub fn load_elf_process(elf_data: &[u8], argv: &[&str], envp: &[&str]) {
