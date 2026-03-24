@@ -1,0 +1,5 @@
+/target/
+*.bin
+*.cpio.gz
+rootfs/
+*.elf
