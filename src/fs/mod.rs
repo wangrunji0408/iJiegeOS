@@ -1,4 +1,4 @@
-mod fd;
+pub mod fd;
 mod ramfs;
 
 pub use fd::FileDescriptor;
