@@ -100,6 +100,10 @@ pub fn syscall(id: usize, args: [usize; 6], cx: &mut TrapContext) -> isize {
         LAST_SYSCALLS[SC_IDX % 8] = (id, result);
         SC_IDX += 1;
     }
+    // Log syscalls that return errors (except common ENOENT from openat)
+    if result < 0 && !(id == 56 && result == -2) {
+        println!("[syscall] #{} = {} (args: {:#x}, {:#x}, {:#x})", id, result, args[0], args[1], args[2]);
+    }
     result
 }
 
