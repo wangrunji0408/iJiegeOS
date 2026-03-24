@@ -295,22 +295,23 @@ pub fn load_elf_process(elf_data: &[u8], argv: &[&str], envp: &[&str]) {
 fn map_and_copy(page_table: &mut PageTable, start_va: usize, end_va: usize, data: &[u8], perm: PTEFlags) {
     let start_vpn = VirtAddr(start_va).floor();
     let end_vpn = VirtAddr(end_va).ceil();
+    let total_pages = end_vpn.0 - start_vpn.0;
+
+    println!("[ELF]   mapping {} pages, data {} bytes", total_pages, data.len());
 
     for vpn_val in start_vpn.0..end_vpn.0 {
         let vpn = VirtPageNum(vpn_val);
-        // Check if already mapped
         if page_table.translate(vpn).is_some() {
-            // Already mapped (e.g., overlapping segments), skip mapping but still copy data
-        } else {
-            let frame = crate::mm::frame_alloc().expect("OOM in ELF load");
-            let ppn = frame.ppn;
-            // Use RWX for initial mapping (to allow writing), will be restricted later via mprotect
-            page_table.map(vpn, ppn, perm | PTEFlags::W);
-            core::mem::forget(frame);
+            continue;
         }
+        let frame = crate::mm::frame_alloc().expect("OOM in ELF load");
+        let ppn = frame.ppn;
+        page_table.map(vpn, ppn, perm | PTEFlags::W);
+        core::mem::forget(frame);
     }
 
-    // Copy data
+    println!("[ELF]   pages mapped, copying data...");
+
     if data.is_empty() { return; }
     let mut copied = 0;
     let page_offset = start_va & (PAGE_SIZE - 1);
@@ -319,13 +320,19 @@ fn map_and_copy(page_table: &mut PageTable, start_va: usize, end_va: usize, data
         if copied >= data.len() { break; }
         let vpn = VirtPageNum(vpn_val);
         let pte = page_table.translate(vpn).unwrap();
-        let dst_page = pte.ppn().as_bytes_mut();
+        let pa = pte.ppn().addr().0;
         let dst_start = if vpn_val == start_vpn.0 { page_offset } else { 0 };
         let copy_len = core::cmp::min(PAGE_SIZE - dst_start, data.len() - copied);
-        dst_page[dst_start..dst_start + copy_len]
-            .copy_from_slice(&data[copied..copied + copy_len]);
+        unsafe {
+            core::ptr::copy_nonoverlapping(
+                data[copied..].as_ptr(),
+                (pa + dst_start) as *mut u8,
+                copy_len,
+            );
+        }
         copied += copy_len;
     }
+    println!("[ELF]   data copied: {} bytes", copied);
 }
 
 fn trap_return() {
