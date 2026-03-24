@@ -1146,9 +1146,11 @@ fn sys_epoll_pwait(epfd: usize, events_ptr: usize, maxevents: i32, timeout: i32,
                     drop(f);
 
                     if let Some(data) = found_data {
-                        let mut ev_buf = [0u8; 12];
+                        // epoll_event on RISC-V: {u32 events, u32 pad, u64 data}
+                        let mut ev_buf = [0u8; 16];
                         ev_buf[0..4].copy_from_slice(&0x001u32.to_le_bytes()); // EPOLLIN
-                        ev_buf[4..12].copy_from_slice(&data.to_le_bytes());
+                        // ev_buf[4..8] is padding (zero)
+                        ev_buf[8..16].copy_from_slice(&data.to_le_bytes());
                         write_user_data(events_ptr, &ev_buf);
                         println!("[epoll] Returning event for fd={} data={:#x}", found_fd, data);
                         return 1;
