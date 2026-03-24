@@ -139,7 +139,11 @@ pub fn syscall(id: usize, args: [usize; 6], cx: &mut TrapContext) -> isize {
             println!("[syscall] openat({}, {:?}, {:#x}) = {}", args[0] as i32, pathname, args[2], ret);
             ret
         }
-        nr::FSTAT => sys_fstat(args[0], args[1]),
+        nr::FSTAT => {
+            let ret = sys_fstat(args[0], args[1]);
+            println!("[syscall] fstat(fd={}) = {}", args[0], ret);
+            ret
+        }
         nr::FSTATAT => sys_fstatat(args[0] as i32, args[1], args[2], args[3] as i32),
         nr::STATX => sys_statx(args[0] as i32, args[1], args[2] as i32, args[3] as u32, args[4]),
         nr::FCNTL => sys_fcntl(args[0], args[1], args[2]),
