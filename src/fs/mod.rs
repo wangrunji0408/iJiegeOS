@@ -307,6 +307,14 @@ fn map_and_copy(page_table: &mut PageTable, start_va: usize, end_va: usize, data
         let frame = crate::mm::frame_alloc().expect("OOM in ELF load");
         let ppn = frame.ppn;
         page_table.map(vpn, ppn, perm | PTEFlags::W);
+        // Verify mapping immediately
+        let check = page_table.translate(vpn);
+        if check.is_none() || check.unwrap().ppn().addr().0 == 0 {
+            println!("[ELF] BUG: map succeeded but translate failed! VPN={:#x} expected PPN={:#x}", vpn_val, ppn.0);
+            if let Some(pte) = check {
+                println!("[ELF]   got pte.bits={:#x} ppn={:#x}", pte.bits, pte.ppn().0);
+            }
+        }
         core::mem::forget(frame);
     }
 
