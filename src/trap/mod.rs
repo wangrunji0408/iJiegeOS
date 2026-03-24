@@ -96,5 +96,5 @@ fn get_time() -> u64 {
 }
 
 pub fn set_next_trigger() {
-    crate::arch::sbi::set_timer(get_time() + crate::config::CLOCK_FREQ / 100);
+    crate::arch::sbi::set_timer(get_time() + crate::config::CLOCK_FREQ as u64 / 100);
 }
