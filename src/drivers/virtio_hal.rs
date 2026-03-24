@@ -9,6 +9,7 @@ unsafe impl Hal for HalImpl {
             .expect("DMA alloc failed");
         let pa = frames[0].ppn.addr().0;
         core::mem::forget(frames);
+        crate::println!("[DMA] alloc {} pages at PA={:#x}", pages, pa);
         let ptr = unsafe { NonNull::new_unchecked(pa as *mut u8) };
         (pa, ptr)
     }
