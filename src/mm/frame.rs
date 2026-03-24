@@ -29,7 +29,7 @@ struct StackFrameAllocator {
 }
 
 impl StackFrameAllocator {
-    fn new() -> Self {
+    const fn new() -> Self {
         Self {
             current: 0,
             end: 0,
