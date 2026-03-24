@@ -87,16 +87,8 @@ pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
             // Try to handle page fault
             let handled = crate::process::handle_page_fault(stval, scause.cause());
             if !handled {
-                if stval == 0 {
-                    // Skip instruction that accesses NULL pointer
-                    println!("[kernel] Skipping NULL access at {:#x}", cx.sepc);
-                    cx.sepc += 4; // skip the faulting instruction
-                    // Set return value to 0
-                    cx.x[10] = 0; // a0 = 0
-                } else {
-                    println!("[kernel] Unhandled page fault, killing process");
-                    crate::process::exit_current(-2);
-                }
+                println!("[kernel] Unhandled page fault at {:#x}, addr={:#x}", cx.sepc, stval);
+                crate::process::exit_current(-2);
             }
         }
         Trap::Exception(Exception::InstructionFault)
