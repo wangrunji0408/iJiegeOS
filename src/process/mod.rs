@@ -1,20 +1,40 @@
+mod pid;
+mod process;
+mod manager;
+mod switch;
+
+pub use process::*;
+pub use manager::*;
+pub use pid::*;
+
+use alloc::sync::Arc;
+use spin::Mutex;
+
 pub fn init() {
-    // TODO: Initialize process management
+    manager::init();
 }
 
 pub fn run_first_task() -> ! {
-    panic!("No tasks to run yet");
+    manager::run_first_task()
 }
 
 pub fn exit_current(code: i32) -> ! {
-    println!("[kernel] Process exit with code {}", code);
-    crate::arch::shutdown();
+    manager::exit_current(code)
 }
 
 pub fn schedule() {
-    // TODO: Schedule next task
+    manager::yield_current();
 }
 
-pub fn handle_page_fault(_addr: usize, _cause: riscv::register::scause::Trap) -> bool {
+pub fn handle_page_fault(addr: usize, cause: riscv::register::scause::Trap) -> bool {
+    // For now, no page fault handling
     false
+}
+
+pub fn current_process() -> Arc<Mutex<Process>> {
+    manager::current_process()
+}
+
+pub fn current_pid() -> usize {
+    manager::current_pid()
 }
