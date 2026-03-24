@@ -37,7 +37,15 @@ pub fn load_elf_process(elf_data: &[u8], argv: &[&str], envp: &[&str]) {
     use xmas_elf::ElfFile;
     use xmas_elf::program::Type;
 
-    let elf = ElfFile::new(elf_data).expect("Invalid ELF file");
+    // Ensure ELF data is aligned for parsing
+    let mut aligned_buf: alloc::vec::Vec<u64> = alloc::vec![0u64; (elf_data.len() + 7) / 8];
+    let aligned_data = unsafe {
+        let ptr = aligned_buf.as_mut_ptr() as *mut u8;
+        core::ptr::copy_nonoverlapping(elf_data.as_ptr(), ptr, elf_data.len());
+        core::slice::from_raw_parts(ptr, elf_data.len())
+    };
+
+    let elf = ElfFile::new(aligned_data).expect("Invalid ELF file");
     let elf_header = elf.header;
 
     let is_pie = elf_header.pt2.type_().as_type() == xmas_elf::header::Type::SharedObject;
