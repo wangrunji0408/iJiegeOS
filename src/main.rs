@@ -1,8 +1,6 @@
 #![no_std]
 #![no_main]
-#![feature(panic_info_message)]
 #![feature(alloc_error_handler)]
-#![feature(naked_functions)]
 #![allow(unused)]
 
 extern crate alloc;
@@ -71,10 +69,10 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
             "\x1b[1;31m[PANIC] at {}:{} {}\x1b[0m",
             location.file(),
             location.line(),
-            info.message().unwrap_or(&format_args!(""))
+            info.message()
         );
     } else {
-        println!("\x1b[1;31m[PANIC] {}\x1b[0m", info.message().unwrap_or(&format_args!("")));
+        println!("\x1b[1;31m[PANIC] {}\x1b[0m", info.message());
     }
     arch::shutdown();
 }
