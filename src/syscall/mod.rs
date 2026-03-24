@@ -727,18 +727,31 @@ fn sys_fstat(fd: usize, buf: usize) -> isize {
 fn sys_fstatat(_dirfd: i32, pathname_ptr: usize, buf: usize, _flags: i32) -> isize {
     let pathname = read_user_cstr(pathname_ptr);
     let fs = crate::fs::RAMFS.lock();
-    if fs.exists(&pathname) {
-        drop(fs);
-        // Fill in a reasonable stat structure
+
+    let (exists, is_dir) = if fs.exists(&pathname) {
+        let f = fs.get_file(&pathname).unwrap();
+        (true, f.is_dir)
+    } else {
+        // Check if pathname is a directory prefix of any file
+        let prefix = if pathname.ends_with('/') { pathname.clone() } else { alloc::format!("{}/", pathname) };
+        let has_children = fs.files_with_prefix(&prefix);
+        (has_children, has_children)
+    };
+    drop(fs);
+
+    if exists {
         let mut stat = [0u8; 128];
-        // st_mode = regular file, 0644
-        let mode: u32 = 0o100644;
+        let mode: u32 = if is_dir { 0o40755 } else { 0o100644 };
+        stat[0..8].copy_from_slice(&1u64.to_le_bytes()); // st_dev
+        stat[8..16].copy_from_slice(&(crate::fs::fd::alloc_inode()).to_le_bytes()); // st_ino
         stat[16..20].copy_from_slice(&mode.to_le_bytes());
-        // st_blksize = 4096
+        stat[24..28].copy_from_slice(&1u32.to_le_bytes()); // st_nlink
         stat[56..64].copy_from_slice(&4096u64.to_le_bytes());
         write_user_data(buf, &stat);
         return 0;
     }
+    -2 // ENOENT
+}
     drop(fs);
     -2 // ENOENT
 }
