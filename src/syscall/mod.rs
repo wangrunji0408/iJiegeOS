@@ -585,8 +585,21 @@ fn sys_fstat(fd: usize, buf: usize) -> isize {
 
 fn sys_fstatat(_dirfd: i32, pathname_ptr: usize, buf: usize, _flags: i32) -> isize {
     let pathname = read_user_cstr(pathname_ptr);
-    // Stub: return -ENOENT for now
-    -2
+    let fs = crate::fs::RAMFS.lock();
+    if fs.exists(&pathname) {
+        drop(fs);
+        // Fill in a reasonable stat structure
+        let mut stat = [0u8; 128];
+        // st_mode = regular file, 0644
+        let mode: u32 = 0o100644;
+        stat[16..20].copy_from_slice(&mode.to_le_bytes());
+        // st_blksize = 4096
+        stat[56..64].copy_from_slice(&4096u64.to_le_bytes());
+        write_user_data(buf, &stat);
+        return 0;
+    }
+    drop(fs);
+    -2 // ENOENT
 }
 
 fn sys_statx(_dirfd: i32, _pathname_ptr: usize, _flags: i32, _mask: u32, _buf: usize) -> isize {
