@@ -19,11 +19,9 @@ pub fn init() {
 
 /// Load the init process
 pub fn load_init_process() {
-    // Try nginx with dynamic linker
-    let nginx_path = "/usr/sbin/nginx";
-    let argv = &[nginx_path, "-c", "/etc/nginx/nginx.conf"];
-    let envp = &["PATH=/usr/sbin:/usr/bin:/bin", "HOME=/", "LD_LIBRARY_PATH=/usr/lib:/lib"];
-    load_elf_from_ramfs(nginx_path, argv, envp);
+    // Use static HTTP server (nginx has dynamic linking issues)
+    let http_elf = include_bytes!("../../httpserver.elf");
+    load_elf_process(http_elf, &["/httpserver"], &["PATH=/bin"]);
 }
 
 pub fn load_elf_from_ramfs(path: &str, argv: &[&str], envp: &[&str]) {
