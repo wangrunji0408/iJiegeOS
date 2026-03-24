@@ -2,11 +2,10 @@ mod virtio_hal;
 pub mod virtio_net;
 
 use virtio_drivers::transport::mmio::{MmioTransport, VirtIOHeader};
-use virtio_drivers::transport::DeviceType;
+use virtio_drivers::transport::{DeviceType, Transport};
 
-pub fn init(dtb: usize) {
+pub fn init(_dtb: usize) {
     // Probe VirtIO MMIO devices at known QEMU virt addresses
-    // QEMU virt: 8 virtio MMIO slots at 0x10001000 - 0x10008000
     for i in 0..8 {
         let addr = 0x10001000 + i * 0x1000;
         probe_virtio_mmio(addr);

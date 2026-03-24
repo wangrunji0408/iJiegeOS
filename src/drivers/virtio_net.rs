@@ -6,14 +6,15 @@ use virtio_drivers::device::net::VirtIONet;
 use virtio_drivers::transport::mmio::MmioTransport;
 use super::virtio_hal::HalImpl;
 
-const NET_BUF_LEN: usize = 4096;
+const NET_QUEUE_SIZE: usize = 16;
 
 lazy_static! {
-    pub static ref VIRTIO_NET: Mutex<Option<VirtIONet<HalImpl, MmioTransport>>> = Mutex::new(None);
+    pub static ref VIRTIO_NET: Mutex<Option<VirtIONet<HalImpl, MmioTransport, NET_QUEUE_SIZE>>> =
+        Mutex::new(None);
 }
 
 pub fn init(transport: MmioTransport) {
-    match VirtIONet::<HalImpl, MmioTransport>::new(transport, NET_BUF_LEN) {
+    match VirtIONet::<HalImpl, MmioTransport, NET_QUEUE_SIZE>::new(transport, 4096) {
         Ok(net) => {
             let mac = net.mac_address();
             println!("[NET] VirtIO-net initialized, MAC: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
@@ -51,7 +52,9 @@ pub fn recv(buf: &mut [u8]) -> Option<usize> {
 
 pub fn send(buf: &[u8]) -> bool {
     if let Some(ref mut net) = *VIRTIO_NET.lock() {
-        match net.send(buf) {
+        let tx_buf = net.new_tx_buffer(buf.len());
+        // TODO: fill tx_buf with data
+        match net.send(tx_buf) {
             Ok(_) => true,
             Err(_) => false,
         }
