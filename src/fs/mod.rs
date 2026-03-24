@@ -314,9 +314,8 @@ pub fn load_elf_process(elf_data: &[u8], argv: &[&str], envp: &[&str]) {
     let real_entry = if has_interp { interp_entry } else { actual_entry };
 
     println!("[ELF] Final entry: {:#x}, SP: {:#x}, PID: {}", real_entry, sp, proc.pid);
-    // Debug: print stack content
-    println!("[ELF] Stack at SP:");
-    for i in 0..40 {
+    // Debug: print a few stack entries
+    for i in 0..5 {
         let addr = sp + i * 8;
         let vpn = VirtPageNum(addr / PAGE_SIZE);
         if let Some(pte) = proc.memory_set.page_table.translate(vpn) {
