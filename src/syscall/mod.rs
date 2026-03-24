@@ -772,8 +772,11 @@ fn sys_fcntl(fd: usize, cmd: usize, arg: usize) -> isize {
 }
 
 fn sys_ioctl(fd: usize, request: usize, arg: usize) -> isize {
-    // Stub
-    -25 // ENOTTY
+    match request {
+        0x5421 => 0,         // FIONBIO - set non-blocking (success stub)
+        0x5401 => -25,       // TCGETS - not a tty
+        _ => 0,              // Other ioctls - success stub
+    }
 }
 
 fn sys_getcwd(buf: usize, size: usize) -> isize {
