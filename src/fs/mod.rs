@@ -253,6 +253,11 @@ pub fn load_elf_process(elf_data: &[u8], argv: &[&str], envp: &[&str]) {
         (25, random_ptr),            // AT_RANDOM
         (23, 0),                     // AT_SECURE
         (16, 0),                     // AT_HWCAP
+        (11, 0),                     // AT_UID
+        (12, 0),                     // AT_EUID
+        (13, 0),                     // AT_GID
+        (14, 0),                     // AT_EGID
+        (17, 100),                   // AT_CLKTCK
     ];
 
     if has_interp {
