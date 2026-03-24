@@ -316,12 +316,20 @@ fn map_and_copy(page_table: &mut PageTable, start_va: usize, end_va: usize, data
         // Copy data for this page
         if copied < data.len() {
             let pa = ppn.addr().0;
+            if pa == 0 {
+                println!("[ELF] ERROR: PA=0 for VPN={:#x} ppn={:#x}", vpn_val, ppn.0);
+                return;
+            }
             let dst_start = if vpn_val == start_vpn.0 { page_offset } else { 0 };
             let copy_len = core::cmp::min(PAGE_SIZE - dst_start, data.len() - copied);
+            let dst_addr = pa + dst_start;
+            if vpn_val < start_vpn.0 + 3 {
+                println!("[ELF]   copy to PA={:#x} len={}", dst_addr, copy_len);
+            }
             unsafe {
                 core::ptr::copy_nonoverlapping(
                     data[copied..].as_ptr(),
-                    (pa + dst_start) as *mut u8,
+                    dst_addr as *mut u8,
                     copy_len,
                 );
             }
