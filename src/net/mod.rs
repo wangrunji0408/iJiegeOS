@@ -18,6 +18,7 @@ use smoltcp::time::Instant;
 lazy_static! {
     pub static ref NET_STACK: Mutex<Option<NetStack>> = Mutex::new(None);
     static ref NEXT_SOCKFD: Mutex<usize> = Mutex::new(100);
+    static ref TCP_LISTEN_HANDLE: Mutex<Option<SmolSocketHandle>> = Mutex::new(None);
 }
 
 pub struct NetStack {
@@ -119,56 +120,52 @@ pub fn tcp_listen(port: u16) -> Option<SmolSocketHandle> {
         let mut socket = TcpSocket::new(tcp_rx_buffer, tcp_tx_buffer);
         socket.listen(port).ok()?;
         let handle = stack.sockets.add(socket);
+        *TCP_LISTEN_HANDLE.lock() = Some(handle);
         Some(handle)
     } else {
         None
     }
 }
 
-/// Check if any TCP socket has accepted a new connection
+/// Check if the TCP listen socket has accepted a connection
 pub fn check_tcp_accept() -> bool {
-    if let Some(ref mut stack) = *NET_STACK.lock() {
-        for (_handle, socket) in stack.sockets.iter() {
-            let tcp = smoltcp::socket::tcp::Socket::downcast(&socket);
-            if let Some(tcp) = tcp {
-                if tcp.is_active() {
-                    return true;
-                }
-            }
+    let handle = *TCP_LISTEN_HANDLE.lock();
+    if let Some(handle) = handle {
+        if let Some(ref mut stack) = *NET_STACK.lock() {
+            let socket = stack.sockets.get::<TcpSocket>(handle);
+            return socket.is_active();
         }
     }
     false
 }
 
-/// Read data from the TCP socket
+/// Read data from the accepted TCP connection
 pub fn tcp_read(buf: &mut [u8]) -> isize {
-    if let Some(ref mut stack) = *NET_STACK.lock() {
-        for (_handle, socket) in stack.sockets.iter_mut() {
-            let tcp = smoltcp::socket::tcp::Socket::downcast_mut(&mut socket);
-            if let Some(tcp) = tcp {
-                if tcp.can_recv() {
-                    match tcp.recv_slice(buf) {
-                        Ok(len) => return len as isize,
-                        Err(_) => return -11, // EAGAIN
-                    }
+    let handle = *TCP_LISTEN_HANDLE.lock();
+    if let Some(handle) = handle {
+        if let Some(ref mut stack) = *NET_STACK.lock() {
+            let socket = stack.sockets.get_mut::<TcpSocket>(handle);
+            if socket.can_recv() {
+                match socket.recv_slice(buf) {
+                    Ok(len) => return len as isize,
+                    Err(_) => return -11,
                 }
             }
         }
     }
-    -11 // EAGAIN
+    -11
 }
 
-/// Write data to the TCP socket
+/// Write data to the accepted TCP connection
 pub fn tcp_write(data: &[u8]) -> isize {
-    if let Some(ref mut stack) = *NET_STACK.lock() {
-        for (_handle, socket) in stack.sockets.iter_mut() {
-            let tcp = smoltcp::socket::tcp::Socket::downcast_mut(&mut socket);
-            if let Some(tcp) = tcp {
-                if tcp.can_send() {
-                    match tcp.send_slice(data) {
-                        Ok(len) => return len as isize,
-                        Err(_) => return -11,
-                    }
+    let handle = *TCP_LISTEN_HANDLE.lock();
+    if let Some(handle) = handle {
+        if let Some(ref mut stack) = *NET_STACK.lock() {
+            let socket = stack.sockets.get_mut::<TcpSocket>(handle);
+            if socket.can_send() {
+                match socket.send_slice(data) {
+                    Ok(len) => return len as isize,
+                    Err(_) => return -11,
                 }
             }
         }
