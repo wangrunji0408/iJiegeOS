@@ -1,4 +1,6 @@
 use alloc::vec::Vec;
+use alloc::sync::Arc;
+use spin::Mutex;
 
 #[derive(Debug)]
 pub enum FileDescriptor {
@@ -12,11 +14,11 @@ pub enum FileDescriptor {
     },
     /// A socket
     Socket {
-        fd: usize,
+        handle: Arc<Mutex<crate::net::SocketHandle>>,
     },
     /// An epoll instance
     Epoll {
-        events: Vec<EpollEvent>,
+        instance: Arc<Mutex<crate::net::EpollInstance>>,
     },
     /// eventfd
     EventFd {
