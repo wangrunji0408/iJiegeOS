@@ -185,6 +185,8 @@ pub fn syscall(id: usize, args: [usize; 6], cx: &mut TrapContext) -> isize {
         nr::GETRUSAGE => sys_getrusage(args[0] as i32, args[1]),
         nr::SETITIMER => sys_setitimer(args[0] as i32, args[1], args[2]),
         nr::SYSLOG => 0, // stub
+        258 => 0, // timer_settime stub
+        123 => 0, // sched_setaffinity stub
         nr::SENDFILE => sys_sendfile(args[0], args[1], args[2], args[3]),
         nr::READLINKAT => sys_readlinkat(args[0] as i32, args[1], args[2], args[3]),
         nr::FACCESSAT => sys_faccessat(args[0] as i32, args[1], args[2] as i32),
