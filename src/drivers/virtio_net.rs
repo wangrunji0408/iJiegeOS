@@ -1,8 +1,7 @@
-use alloc::vec;
 use alloc::vec::Vec;
 use spin::Mutex;
 use lazy_static::lazy_static;
-use virtio_drivers::device::net::VirtIONet;
+use virtio_drivers::device::net::{VirtIONet, TxBuffer};
 use virtio_drivers::transport::mmio::MmioTransport;
 use super::virtio_hal::HalImpl;
 
@@ -35,11 +34,15 @@ pub fn can_recv() -> bool {
     }
 }
 
-pub fn recv(buf: &mut [u8]) -> Option<usize> {
+pub fn recv() -> Option<Vec<u8>> {
     if let Some(ref mut net) = *VIRTIO_NET.lock() {
         if net.can_recv() {
-            match net.receive_wait(buf) {
-                Ok(len) => Some(len),
+            match net.receive() {
+                Ok(rx_buf) => {
+                    let data = rx_buf.packet().to_vec();
+                    net.recycle_rx_buffer(rx_buf).ok();
+                    Some(data)
+                }
                 Err(_) => None,
             }
         } else {
@@ -52,8 +55,7 @@ pub fn recv(buf: &mut [u8]) -> Option<usize> {
 
 pub fn send(buf: &[u8]) -> bool {
     if let Some(ref mut net) = *VIRTIO_NET.lock() {
-        let tx_buf = net.new_tx_buffer(buf.len());
-        // TODO: fill tx_buf with data
+        let tx_buf = TxBuffer::from(buf);
         match net.send(tx_buf) {
             Ok(_) => true,
             Err(_) => false,
