@@ -607,6 +607,7 @@ fn sys_openat(dirfd: i32, pathname_ptr: usize, flags: i32, mode: u32) -> isize {
                     data: alloc::vec::Vec::new(),
                     offset: 0,
                     path: full_path,
+                    inode: crate::fs::fd::alloc_inode(),
                 }
             )));
             return fd as isize;
@@ -627,6 +628,7 @@ fn sys_openat(dirfd: i32, pathname_ptr: usize, flags: i32, mode: u32) -> isize {
                 data,
                 offset,
                 path: full_path,
+                inode: crate::fs::fd::alloc_inode(),
             }
         )));
         return fd as isize;
@@ -643,6 +645,7 @@ fn sys_openat(dirfd: i32, pathname_ptr: usize, flags: i32, mode: u32) -> isize {
                 data: alloc::vec::Vec::new(),
                 offset: 0,
                 path: full_path,
+                inode: crate::fs::fd::alloc_inode(),
             }
         )));
         return fd as isize;
