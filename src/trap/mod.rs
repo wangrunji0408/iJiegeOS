@@ -55,9 +55,35 @@ pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
                 cx.x[1], cx.x[2], cx.x[3], cx.x[4]
             );
             println!(
-                "[kernel] a0={:#x} a1={:#x} a2={:#x} t1(x6)={:#x}",
-                cx.x[10], cx.x[11], cx.x[12], cx.x[6]
+                "[kernel] a0={:#x} a1={:#x} a2={:#x} a3={:#x} a4={:#x} a5={:#x}",
+                cx.x[10], cx.x[11], cx.x[12], cx.x[13], cx.x[14], cx.x[15]
             );
+            println!(
+                "[kernel] s0={:#x} s1={:#x} s2={:#x} s3={:#x}",
+                cx.x[8], cx.x[9], cx.x[18], cx.x[19]
+            );
+            // Print stack backtrace (follow ra/fp chain)
+            println!("[kernel] Stack backtrace:");
+            let mut fp = cx.x[8]; // s0/fp
+            let mut ra_val = cx.x[1];
+            for i in 0..5 {
+                println!("[kernel]   #{}: ra={:#x}", i, ra_val);
+                if fp == 0 || fp < 0x1000 { break; }
+                // Try to read saved ra and fp from stack frame
+                let proc_arc = crate::process::current_process();
+                let proc_guard = proc_arc.lock();
+                let pt = &proc_guard.memory_set.page_table;
+                if let Some(pte) = pt.translate(crate::mm::VirtPageNum(fp / 4096)) {
+                    let pa = pte.ppn().addr().0 + (fp & 4095);
+                    if (fp & 4095) >= 16 {
+                        unsafe {
+                            ra_val = *((pa - 8) as *const usize);
+                            fp = *((pa - 16) as *const usize);
+                        }
+                    } else { break; }
+                } else { break; }
+                drop(proc_guard);
+            }
             // Try to handle page fault
             let handled = crate::process::handle_page_fault(stval, scause.cause());
             if !handled {
