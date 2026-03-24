@@ -3,8 +3,8 @@
 /// Physical memory start
 pub const MEMORY_START: usize = 0x8000_0000;
 
-/// Physical memory end (128MB for now)
-pub const MEMORY_END: usize = 0x8800_0000;
+/// Physical memory end (256MB)
+pub const MEMORY_END: usize = 0x9000_0000;
 
 /// Kernel base address
 pub const KERNEL_BASE: usize = 0x8020_0000;
