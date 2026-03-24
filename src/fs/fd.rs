@@ -86,6 +86,10 @@ impl FileDescriptor {
                 }
             }
             _ => -9, // EBADF
+        }
+    }
+
+    pub fn write(&mut self, buf: &[u8]) -> isize {
         match self {
             FileDescriptor::Stdout | FileDescriptor::Stderr => {
                 for &b in buf {
