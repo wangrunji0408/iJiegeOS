@@ -173,7 +173,9 @@ impl PageTable {
     }
 
     pub fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
-        self.find_pte(vpn).map(|pte| *pte)
+        self.find_pte(vpn)
+            .map(|pte| *pte)
+            .filter(|pte| pte.is_valid())
     }
 
     pub fn translate_va(&self, va: VirtAddr) -> Option<PhysAddr> {
