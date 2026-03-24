@@ -203,6 +203,10 @@ fn syscall_inner(id: usize, args: [usize; 6], cx: &mut TrapContext) -> isize {
         nr::SYSLOG => 0, // stub
         258 => 0, // timer_settime stub
         123 => 0, // sched_setaffinity stub
+        54 => 0,  // fchownat stub
+        55 => 0,  // fchown stub
+        46 => 0,  // fchmod stub
+        53 => 0,  // fchmodat stub
         nr::SENDFILE => sys_sendfile(args[0], args[1], args[2], args[3]),
         nr::READLINKAT => sys_readlinkat(args[0] as i32, args[1], args[2], args[3]),
         nr::FACCESSAT => sys_faccessat(args[0] as i32, args[1], args[2] as i32),
