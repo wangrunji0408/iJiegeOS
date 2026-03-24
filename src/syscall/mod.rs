@@ -1,4 +1,5 @@
 use crate::trap::TrapContext;
+use crate::config::PAGE_SIZE;
 
 // Linux RISC-V system call numbers
 mod nr {
