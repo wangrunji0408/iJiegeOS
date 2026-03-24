@@ -9,7 +9,9 @@ QEMU_ARGS := -machine virt \
 	-nographic \
 	-bios default \
 	-m 256M \
-	-kernel $(KERNEL_BIN)
+	-kernel $(KERNEL_BIN) \
+	-netdev user,id=net0,hostfwd=tcp::8080-:80 \
+	-device virtio-net-device,netdev=net0
 
 ifeq ($(MODE), release)
 	CARGO_FLAGS := --release
