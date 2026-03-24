@@ -1122,31 +1122,30 @@ fn sys_epoll_pwait(epfd: usize, events_ptr: usize, maxevents: i32, timeout: i32,
                 let f = fd_obj.lock();
                 if let crate::fs::FileDescriptor::Epoll { instance } = &*f {
                     let inst = instance.lock();
-                    // Find the listening socket entry (fd=4 or whichever is the listen socket)
-                    // Look for the socket fd that is bound to port 80
+                    // Find the socket entry - check each registered fd
+                    let mut found_data: Option<u64> = None;
+                    let mut found_fd: i32 = -1;
                     for entry in &inst.entries {
-                        // Check if this fd is a listening socket
                         let proc2 = crate::process::current_process();
                         let p2 = proc2.lock();
                         if let Some(fd_obj2) = p2.get_fd(entry.fd as usize) {
                             let f2 = fd_obj2.lock();
-                            let is_listen = matches!(&*f2, crate::fs::FileDescriptor::Socket { .. });
-                            drop(f2);
-                            drop(p2);
-                            if is_listen {
-                                let mut ev_buf = [0u8; 12];
-                                let epollin: u32 = 0x001;
-                                ev_buf[0..4].copy_from_slice(&epollin.to_le_bytes());
-                                ev_buf[4..12].copy_from_slice(&entry.data.to_le_bytes());
-                                drop(inst);
-                                drop(f);
-                                write_user_data(events_ptr, &ev_buf);
-                                println!("[epoll] Returning event for fd={} data={:#x}", entry.fd, entry.data);
-                                return 1;
+                            if matches!(&*f2, crate::fs::FileDescriptor::Socket { .. }) {
+                                found_data = Some(entry.data);
+                                found_fd = entry.fd;
                             }
-                        } else {
-                            drop(p2);
                         }
+                    }
+                    drop(inst);
+                    drop(f);
+
+                    if let Some(data) = found_data {
+                        let mut ev_buf = [0u8; 12];
+                        ev_buf[0..4].copy_from_slice(&0x001u32.to_le_bytes()); // EPOLLIN
+                        ev_buf[4..12].copy_from_slice(&data.to_le_bytes());
+                        write_user_data(events_ptr, &ev_buf);
+                        println!("[epoll] Returning event for fd={} data={:#x}", found_fd, data);
+                        return 1;
                     }
                 }
             }
