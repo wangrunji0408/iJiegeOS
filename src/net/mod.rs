@@ -98,7 +98,20 @@ pub fn init() {
     });
 
     println!("[NET] Network stack initialized: 10.0.2.15/24, gw 10.0.2.2");
+
+    // Test: poll a few times to see if we get any ARP traffic
+    drop(net_lock);
+    for i in 0..100 {
+        poll_net();
+        if crate::drivers::virtio_net::can_recv() {
+            println!("[NET] Got data after {} polls", i);
+            break;
+        }
+        for _ in 0..100000 { core::hint::spin_loop(); }
+    }
 }
+
+fn net_lock() {}  // dummy to fix compile
 
 fn get_time_ms() -> i64 {
     let time = riscv::register::time::read() as u64;
