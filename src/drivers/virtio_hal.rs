@@ -23,7 +23,12 @@ unsafe impl Hal for HalImpl {
     }
 
     unsafe fn share(buffer: NonNull<[u8]>, _direction: BufferDirection) -> VirtioPhysAddr {
-        buffer.as_ptr() as *const u8 as VirtioPhysAddr
+        let addr = buffer.as_ptr() as *const u8 as VirtioPhysAddr;
+        // Verify the address is in identity-mapped range
+        if addr < 0x80000000 || addr >= 0x90000000 {
+            crate::println!("[DMA] WARNING: share non-identity-mapped addr={:#x}", addr);
+        }
+        addr
     }
 
     unsafe fn unshare(_paddr: VirtioPhysAddr, _buffer: NonNull<[u8]>, _direction: BufferDirection) {
