@@ -121,7 +121,12 @@ pub fn syscall(id: usize, args: [usize; 6], cx: &mut TrapContext) -> isize {
         nr::NANOSLEEP => sys_nanosleep(args[0], args[1]),
         nr::SIGACTION => sys_sigaction(args[0], args[1], args[2]),
         nr::SIGPROCMASK => sys_sigprocmask(args[0], args[1], args[2], args[3]),
-        nr::OPENAT => sys_openat(args[0] as i32, args[1], args[2] as i32, args[3] as u32),
+        nr::OPENAT => {
+            let ret = sys_openat(args[0] as i32, args[1], args[2] as i32, args[3] as u32);
+            let pathname = read_user_cstr(args[1]);
+            println!("[syscall] openat({}, {:?}, {:#x}) = {}", args[0] as i32, pathname, args[2], ret);
+            ret
+        }
         nr::FSTAT => sys_fstat(args[0], args[1]),
         nr::FSTATAT => sys_fstatat(args[0] as i32, args[1], args[2], args[3] as i32),
         nr::STATX => sys_statx(args[0] as i32, args[1], args[2] as i32, args[3] as u32, args[4]),
