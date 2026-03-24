@@ -810,6 +810,10 @@ fn sys_readlinkat(dirfd: i32, pathname_ptr: usize, buf: usize, bufsiz: usize) ->
 
 fn sys_faccessat(dirfd: i32, pathname_ptr: usize, mode: i32) -> isize {
     let pathname = read_user_cstr(pathname_ptr);
+    let fs = crate::fs::RAMFS.lock();
+    if fs.exists(&pathname) {
+        return 0;
+    }
     -2 // ENOENT
 }
 
