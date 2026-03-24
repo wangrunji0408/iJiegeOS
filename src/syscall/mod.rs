@@ -534,7 +534,10 @@ fn sys_uname(buf: usize) -> isize {
 
 fn get_time_us() -> u64 {
     let time = riscv::register::time::read() as u64;
-    time * 1_000_000 / crate::config::CLOCK_FREQ as u64
+    // Add a base epoch offset so time is never 0
+    // Use 2025-01-01 00:00:00 UTC as base (1735689600 seconds)
+    let base_us: u64 = 1735689600 * 1_000_000;
+    base_us + time * 1_000_000 / crate::config::CLOCK_FREQ as u64
 }
 
 fn sys_clock_gettime(clockid: usize, tp: usize) -> isize {
