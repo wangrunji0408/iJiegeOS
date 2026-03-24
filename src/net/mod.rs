@@ -128,6 +128,10 @@ pub fn poll_net() {
 
 /// Create a TCP listen socket in smoltcp and return handle
 pub fn tcp_listen(port: u16) -> Option<SmolSocketHandle> {
+    // If already listening, return existing handle
+    if let Some(handle) = *TCP_LISTEN_HANDLE.lock() {
+        return Some(handle);
+    }
     if let Some(ref mut stack) = *NET_STACK.lock() {
         let tcp_rx_buffer = SocketBuffer::new(vec![0; 65535]);
         let tcp_tx_buffer = SocketBuffer::new(vec![0; 65535]);
