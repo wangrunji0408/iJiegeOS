@@ -369,6 +369,11 @@ fn sys_brk(addr: usize) -> isize {
 
 fn sys_mmap(addr: usize, len: usize, prot: usize, flags: usize, fd: i32, offset: usize) -> isize {
     use crate::mm::*;
+
+    if len == 0 {
+        return -22; // EINVAL
+    }
+
     let proc = crate::process::current_process();
     let mut p = proc.lock();
 
