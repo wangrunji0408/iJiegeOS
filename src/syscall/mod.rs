@@ -852,6 +852,29 @@ fn sys_sendfile(out_fd: usize, in_fd: usize, offset: usize, count: usize) -> isi
     -38 // TODO
 }
 
+fn sys_pread64(fd: usize, buf_ptr: usize, count: usize, offset: usize) -> isize {
+    let proc = crate::process::current_process();
+    let p = proc.lock();
+    if let Some(fd_obj) = p.get_fd(fd) {
+        drop(p);
+        let f = fd_obj.lock();
+        match &*f {
+            crate::fs::FileDescriptor::File { data, .. } => {
+                if offset >= data.len() { return 0; }
+                let available = data.len() - offset;
+                let read_len = core::cmp::min(count, available);
+                let result = data[offset..offset + read_len].to_vec();
+                drop(f);
+                write_user_data(buf_ptr, &result);
+                read_len as isize
+            }
+            _ => -9,
+        }
+    } else {
+        -9
+    }
+}
+
 fn sys_readlinkat(dirfd: i32, pathname_ptr: usize, buf: usize, bufsiz: usize) -> isize {
     let pathname = read_user_cstr(pathname_ptr);
     if pathname == "/proc/self/exe" {
