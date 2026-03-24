@@ -1,5 +1,4 @@
 mod socket;
-mod virtio_net;
 
 pub use socket::*;
 
