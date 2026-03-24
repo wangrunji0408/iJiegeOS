@@ -30,7 +30,7 @@ _save_context:
     sd x1, 1*8(sp)
     # Skip x2 (sp), save it later
     sd x3, 3*8(sp)
-    # Skip x4 (tp)
+    sd x4, 4*8(sp)
     .set n, 5
     .rept 27
         SAVE_GP %n
@@ -71,6 +71,7 @@ __restore:
     # Restore general purpose registers
     ld x1, 1*8(sp)
     ld x3, 3*8(sp)
+    ld x4, 4*8(sp)
     .set n, 5
     .rept 27
         LOAD_GP %n
