@@ -1,6 +1,9 @@
 use alloc::vec::Vec;
 use alloc::sync::Arc;
 use spin::Mutex;
+use core::sync::atomic::{AtomicU64, Ordering};
+
+static NEXT_INODE: AtomicU64 = AtomicU64::new(1000);
 
 #[derive(Debug)]
 pub enum FileDescriptor {
@@ -29,9 +32,14 @@ pub enum FileDescriptor {
         data: Vec<u8>,
         offset: usize,
         path: alloc::string::String,
+        inode: u64,
     },
     /// /dev/null
     DevNull,
+}
+
+pub fn alloc_inode() -> u64 {
+    NEXT_INODE.fetch_add(1, Ordering::Relaxed)
 }
 
 impl FileDescriptor {
