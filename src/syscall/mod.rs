@@ -284,6 +284,21 @@ fn sys_readv(fd: usize, iov_ptr: usize, iovcnt: usize) -> isize {
 fn sys_close(fd: usize) -> isize {
     let proc = crate::process::current_process();
     let mut p = proc.lock();
+    if let Some(fd_obj) = p.get_fd(fd) {
+        // Check if this is a socket - if so, close the TCP connection
+        let is_socket = {
+            let f = fd_obj.lock();
+            matches!(&*f, crate::fs::FileDescriptor::Socket { .. })
+        };
+        if is_socket {
+            drop(p);
+            crate::net::tcp_close_and_relisten(80);
+            let proc = crate::process::current_process();
+            let mut p = proc.lock();
+            p.close_fd(fd);
+            return 0;
+        }
+    }
     if p.close_fd(fd) { 0 } else { -9 }
 }
 
