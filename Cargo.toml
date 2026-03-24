@@ -13,7 +13,6 @@ xmas-elf = "0.9"
 virtio-drivers = "0.7"
 fdt = "0.1"
 riscv = "0.11"
-smoltcp = { version = "0.11", default-features = false, features = ["alloc", "medium-ethernet", "proto-ipv4", "socket-tcp", "socket-raw"] }
 
 [profile.release]
 debug = true
