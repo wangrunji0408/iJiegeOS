@@ -47,6 +47,7 @@ pub fn load_elf_process(elf_data: &[u8], argv: &[&str], envp: &[&str]) {
 
     let elf = ElfFile::new(aligned_data).expect("Invalid ELF file");
     let elf_header = elf.header;
+    let elf_data = aligned_data; // Use aligned data for all operations
 
     let is_pie = elf_header.pt2.type_().as_type() == xmas_elf::header::Type::SharedObject;
     let entry_point = elf_header.pt2.entry_point() as usize;
