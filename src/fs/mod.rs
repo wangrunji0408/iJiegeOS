@@ -68,7 +68,6 @@ pub fn load_elf_process(elf_data: &[u8], argv: &[&str], envp: &[&str]) {
         for i in 0..512 {
             if kernel_entries[i].is_valid() {
                 user_entries[i] = kernel_entries[i];
-                println!("[ELF] Copying kernel root[{}] = {:#x}", i, kernel_entries[i].bits);
             }
         }
     }
