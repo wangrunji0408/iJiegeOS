@@ -4,32 +4,125 @@ pub use socket::*;
 
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
+use alloc::vec;
 use alloc::vec::Vec;
 use spin::Mutex;
 use lazy_static::lazy_static;
 
+use smoltcp::iface::{Config, Interface, SocketSet, SocketHandle as SmolSocketHandle};
+use smoltcp::socket::tcp::{Socket as TcpSocket, SocketBuffer};
+use smoltcp::wire::{EthernetAddress, IpCidr, Ipv4Address, IpAddress, IpEndpoint};
+use smoltcp::phy::{Device, DeviceCapabilities, Medium, RxToken, TxToken};
+use smoltcp::time::Instant;
+
 lazy_static! {
-    /// Global socket table mapping kernel socket FDs to socket handles
-    pub static ref SOCKETS: Mutex<BTreeMap<usize, Arc<Mutex<SocketHandle>>>> = Mutex::new(BTreeMap::new());
+    pub static ref NET_STACK: Mutex<Option<NetStack>> = Mutex::new(None);
     static ref NEXT_SOCKFD: Mutex<usize> = Mutex::new(100);
 }
 
+pub struct NetStack {
+    pub iface: Interface,
+    pub sockets: SocketSet<'static>,
+    pub device: VirtioSmolDevice,
+}
+
+/// Adapter between virtio-net driver and smoltcp Device trait
+pub struct VirtioSmolDevice;
+
+struct VirtioRxToken(Vec<u8>);
+struct VirtioTxToken;
+
+impl RxToken for VirtioRxToken {
+    fn consume<R, F>(self, f: F) -> R where F: FnOnce(&[u8]) -> R {
+        f(&self.0)
+    }
+}
+
+impl TxToken for VirtioTxToken {
+    fn consume<R, F>(self, len: usize, f: F) -> R where F: FnOnce(&mut [u8]) -> R {
+        let mut buf = vec![0u8; len];
+        let result = f(&mut buf);
+        crate::drivers::virtio_net::send(&buf);
+        result
+    }
+}
+
+impl Device for VirtioSmolDevice {
+    type RxToken<'a> = VirtioRxToken;
+    type TxToken<'a> = VirtioTxToken;
+
+    fn receive(&mut self, _timestamp: Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
+        let mut buf = vec![0u8; 2048];
+        if let Some(len) = crate::drivers::virtio_net::recv(&mut buf) {
+            buf.truncate(len);
+            Some((VirtioRxToken(buf), VirtioTxToken))
+        } else {
+            None
+        }
+    }
+
+    fn transmit(&mut self, _timestamp: Instant) -> Option<Self::TxToken<'_>> {
+        Some(VirtioTxToken)
+    }
+
+    fn capabilities(&self) -> DeviceCapabilities {
+        let mut caps = DeviceCapabilities::default();
+        caps.medium = Medium::Ethernet;
+        caps.max_transmission_unit = 1514;
+        caps
+    }
+}
+
 pub fn init() {
-    println!("[NET] Socket layer initialized");
+    // Check if virtio-net is available
+    if crate::drivers::virtio_net::VIRTIO_NET.lock().is_none() {
+        println!("[NET] No virtio-net device found, socket-only mode");
+        return;
+    }
+
+    let mac = crate::drivers::virtio_net::mac_address();
+    let config = Config::new(EthernetAddress(mac).into());
+    let mut device = VirtioSmolDevice;
+    let mut iface = Interface::new(config, &mut device, Instant::ZERO);
+
+    iface.update_ip_addrs(|addrs| {
+        addrs.push(IpCidr::new(IpAddress::v4(10, 0, 2, 15), 24)).unwrap();
+    });
+    iface.routes_mut().add_default_ipv4_route(Ipv4Address::new(10, 0, 2, 2)).unwrap();
+
+    let sockets = SocketSet::new(vec![]);
+
+    *NET_STACK.lock() = Some(NetStack {
+        iface,
+        sockets,
+        device,
+    });
+
+    println!("[NET] Network stack initialized: 10.0.2.15/24, gw 10.0.2.2");
 }
 
-pub fn alloc_socket(sock: SocketHandle) -> usize {
-    let mut next = NEXT_SOCKFD.lock();
-    let fd = *next;
-    *next += 1;
-    SOCKETS.lock().insert(fd, Arc::new(Mutex::new(sock)));
-    fd
+fn get_time_ms() -> i64 {
+    let time = riscv::register::time::read() as u64;
+    (time * 1000 / crate::config::CLOCK_FREQ as u64) as i64
 }
 
-pub fn get_socket(fd: usize) -> Option<Arc<Mutex<SocketHandle>>> {
-    SOCKETS.lock().get(&fd).cloned()
+pub fn poll_net() {
+    if let Some(ref mut stack) = *NET_STACK.lock() {
+        let timestamp = Instant::from_millis(get_time_ms());
+        stack.iface.poll(timestamp, &mut stack.device, &mut stack.sockets);
+    }
 }
 
-pub fn remove_socket(fd: usize) {
-    SOCKETS.lock().remove(&fd);
+/// Create a TCP listen socket in smoltcp and return handle
+pub fn tcp_listen(port: u16) -> Option<SmolSocketHandle> {
+    if let Some(ref mut stack) = *NET_STACK.lock() {
+        let tcp_rx_buffer = SocketBuffer::new(vec![0; 65535]);
+        let tcp_tx_buffer = SocketBuffer::new(vec![0; 65535]);
+        let mut socket = TcpSocket::new(tcp_rx_buffer, tcp_tx_buffer);
+        socket.listen(port).ok()?;
+        let handle = stack.sockets.add(socket);
+        Some(handle)
+    } else {
+        None
+    }
 }
