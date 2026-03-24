@@ -100,7 +100,14 @@ pub fn syscall(id: usize, args: [usize; 6], cx: &mut TrapContext) -> isize {
         nr::CLOSE => sys_close(args[0]),
         nr::EXIT | nr::EXIT_GROUP => sys_exit(args[0] as i32),
         nr::BRK => sys_brk(args[0]),
-        nr::MMAP => sys_mmap(args[0], args[1], args[2], args[3], args[4] as i32, args[5]),
+        nr::MMAP => {
+            let ret = sys_mmap(args[0], args[1], args[2], args[3], args[4] as i32, args[5]);
+            if args[4] as i32 >= 0 {
+                println!("[syscall] mmap(addr={:#x}, len={:#x}, prot={:#x}, flags={:#x}, fd={}, offset={:#x}) = {:#x}",
+                    args[0], args[1], args[2], args[3], args[4] as i32, args[5], ret as usize);
+            }
+            ret
+        }
         nr::MUNMAP => sys_munmap(args[0], args[1]),
         nr::MPROTECT => sys_mprotect(args[0], args[1], args[2]),
         nr::GETPID => sys_getpid(),
