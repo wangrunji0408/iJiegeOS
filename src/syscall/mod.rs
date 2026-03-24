@@ -575,12 +575,32 @@ fn sys_openat(dirfd: i32, pathname_ptr: usize, flags: i32, mode: u32) -> isize {
 }
 
 fn sys_fstat(fd: usize, buf: usize) -> isize {
-    // Return a dummy stat structure
-    let mut stat = [0u8; 128]; // struct stat is ~128 bytes on riscv64
-    // Set st_blksize = 4096
-    stat[56..64].copy_from_slice(&4096u64.to_le_bytes());
-    write_user_data(buf, &stat);
-    0
+    let proc = crate::process::current_process();
+    let p = proc.lock();
+    if let Some(fd_obj) = p.get_fd(fd) {
+        drop(p);
+        let f = fd_obj.lock();
+        let mut stat = [0u8; 128];
+        // st_mode = regular file, 0644
+        let mode: u32 = 0o100644;
+        stat[16..20].copy_from_slice(&mode.to_le_bytes());
+        // st_size
+        let size: u64 = match &*f {
+            crate::fs::FileDescriptor::File { data, .. } => data.len() as u64,
+            _ => 0,
+        };
+        stat[48..56].copy_from_slice(&size.to_le_bytes());
+        // st_blksize = 4096
+        stat[56..64].copy_from_slice(&4096u64.to_le_bytes());
+        // st_blocks = (size + 511) / 512
+        let blocks = (size + 511) / 512;
+        stat[64..72].copy_from_slice(&blocks.to_le_bytes());
+        drop(f);
+        write_user_data(buf, &stat);
+        0
+    } else {
+        -9 // EBADF
+    }
 }
 
 fn sys_fstatat(_dirfd: i32, pathname_ptr: usize, buf: usize, _flags: i32) -> isize {
