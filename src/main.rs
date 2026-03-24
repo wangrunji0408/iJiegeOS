@@ -58,6 +58,13 @@ pub fn rust_main(hartid: usize, dtb: usize) -> ! {
     net::init();
     println!("[JiegeOS] Network initialized");
 
+    // Pre-poll network to handle initial ARP
+    for i in 0..100 {
+        net::poll_net();
+        for _ in 0..10000 { core::hint::spin_loop(); }
+    }
+    println!("[JiegeOS] Network pre-polled");
+
     process::run_first_task();
     unreachable!("Should not reach here");
 }
