@@ -103,7 +103,13 @@ pub fn syscall(id: usize, args: [usize; 6], cx: &mut TrapContext) -> isize {
         }
         nr::WRITEV => sys_writev(args[0], args[1], args[2]),
         nr::READV => sys_readv(args[0], args[1], args[2]),
-        nr::CLOSE => sys_close(args[0]),
+        nr::CLOSE => {
+            let ret = sys_close(args[0]);
+            if args[0] >= 3 {
+                println!("[syscall] close(fd={}) = {}", args[0], ret);
+            }
+            ret
+        }
         nr::EXIT | nr::EXIT_GROUP => sys_exit(args[0] as i32),
         nr::BRK => sys_brk(args[0]),
         nr::MMAP => {
