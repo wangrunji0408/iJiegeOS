@@ -301,6 +301,17 @@ pub fn load_elf_process(elf_data: &[u8], argv: &[&str], envp: &[&str]) {
     let real_entry = if has_interp { interp_entry } else { actual_entry };
 
     println!("[ELF] Final entry: {:#x}, SP: {:#x}, PID: {}", real_entry, sp, proc.pid);
+    // Debug: print stack content
+    println!("[ELF] Stack at SP:");
+    for i in 0..20 {
+        let addr = sp + i * 8;
+        let vpn = VirtPageNum(addr / PAGE_SIZE);
+        if let Some(pte) = proc.memory_set.page_table.translate(vpn) {
+            let pa = pte.ppn().addr().0 + (addr & (PAGE_SIZE - 1));
+            let val = unsafe { *(pa as *const u64) };
+            println!("[ELF]   [{:#x}] = {:#x}", addr, val);
+        }
+    }
 
     let kernel_satp = KERNEL_SPACE.lock().token();
     proc.trap_cx = TrapContext::app_init_context(
