@@ -88,6 +88,28 @@ pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
             let handled = crate::process::handle_page_fault(stval, scause.cause());
             if !handled {
                 println!("[kernel] Unhandled page fault at {:#x}, addr={:#x}", cx.sepc, stval);
+                // Dump nginx cached time data
+                let proc_arc = crate::process::current_process();
+                let pguard = proc_arc.lock();
+                let pt = &pguard.memory_set.page_table;
+                // ngx_cached_err_log at VA 0x401014f8 (pie_base + 0x1014f8)
+                let va = 0x401014f8usize;
+                let vpn = crate::mm::VirtPageNum(va / 4096);
+                if let Some(pte) = pt.translate(vpn) {
+                    let pa = pte.ppn().addr().0 + (va & 4095);
+                    let len = unsafe { *(pa as *const u64) };
+                    let data = unsafe { *((pa + 8) as *const u64) };
+                    println!("[kernel] ngx_cached_err_log: len={}, data={:#x}", len, data);
+                }
+                // ngx_cached_time at 0x401014e0
+                let va = 0x401014e0usize;
+                let vpn = crate::mm::VirtPageNum(va / 4096);
+                if let Some(pte) = pt.translate(vpn) {
+                    let pa = pte.ppn().addr().0 + (va & 4095);
+                    let val = unsafe { *(pa as *const u64) };
+                    println!("[kernel] ngx_cached_time ptr: {:#x}", val);
+                }
+                drop(pguard);
                 // Print last syscalls
                 unsafe {
                     let idx = crate::syscall::SC_IDX;
