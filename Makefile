@@ -8,7 +8,7 @@ QEMU := qemu-system-riscv64
 QEMU_ARGS := -machine virt \
 	-nographic \
 	-bios default \
-	-m 128M \
+	-m 256M \
 	-kernel $(KERNEL_BIN)
 
 ifeq ($(MODE), release)
