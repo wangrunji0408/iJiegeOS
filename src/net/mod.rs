@@ -52,10 +52,8 @@ impl Device for VirtioSmolDevice {
     type TxToken<'a> = VirtioTxToken;
 
     fn receive(&mut self, _timestamp: Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
-        let mut buf = vec![0u8; 2048];
-        if let Some(len) = crate::drivers::virtio_net::recv(&mut buf) {
-            buf.truncate(len);
-            Some((VirtioRxToken(buf), VirtioTxToken))
+        if let Some(data) = crate::drivers::virtio_net::recv() {
+            Some((VirtioRxToken(data), VirtioTxToken))
         } else {
             None
         }
