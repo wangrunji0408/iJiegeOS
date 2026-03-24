@@ -1,7 +1,12 @@
 mod fd;
-pub use fd::FileDescriptor;
+mod ramfs;
 
+pub use fd::FileDescriptor;
+pub use ramfs::{RAMFS, init_ramfs};
+
+use alloc::string::String;
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 use spin::Mutex;
 use crate::mm::*;
 use crate::process::*;
@@ -9,26 +14,37 @@ use crate::config::*;
 use crate::trap::TrapContext;
 
 pub fn init() {
-    // File system initialization
+    init_ramfs();
 }
 
-/// Load the init process - a simple test program
+/// Load the init process - nginx via dynamic linker
 pub fn load_init_process() {
-    // Load the test ELF binary compiled from C
-    let test_elf = include_bytes!("../../test_hello.elf");
-    load_elf_process(test_elf, &["/init"], &["PATH=/bin"]);
+    let nginx_path = "/usr/sbin/nginx";
+    let argv = &[nginx_path, "-c", "/etc/nginx/nginx.conf"];
+    let envp = &["PATH=/usr/sbin:/usr/bin:/bin", "HOME=/"];
+    load_elf_from_ramfs(nginx_path, argv, envp);
+}
+
+pub fn load_elf_from_ramfs(path: &str, argv: &[&str], envp: &[&str]) {
+    let fs = RAMFS.lock();
+    let file = fs.get_file(path).expect("ELF file not found in ramfs");
+    let elf_data = file.data;
+    drop(fs);
+    load_elf_process(elf_data, argv, envp);
 }
 
 pub fn load_elf_process(elf_data: &[u8], argv: &[&str], envp: &[&str]) {
     use xmas_elf::ElfFile;
-    use xmas_elf::program::{Type, Flags};
+    use xmas_elf::program::Type;
 
     let elf = ElfFile::new(elf_data).expect("Invalid ELF file");
     let elf_header = elf.header;
 
-    println!("[ELF] Loading ELF: entry={:#x}, type={:?}",
-        elf_header.pt2.entry_point(),
-        elf_header.pt2.type_().as_type());
+    let is_pie = elf_header.pt2.type_().as_type() == xmas_elf::header::Type::SharedObject;
+    let entry_point = elf_header.pt2.entry_point() as usize;
+
+    println!("[ELF] Loading ELF: entry={:#x}, type={:?}, PIE={}",
+        entry_point, elf_header.pt2.type_().as_type(), is_pie);
 
     let mut proc = Process::new_empty();
     proc.pid = alloc_pid();
@@ -40,169 +56,192 @@ pub fn load_elf_process(elf_data: &[u8], argv: &[&str], envp: &[&str]) {
     let kernel_stack_bottom = kernel_stack[0].ppn.addr().0;
     let kernel_stack_top = kernel_stack_bottom + KERNEL_STACK_SIZE;
     proc.kernel_stack = kernel_stack_bottom;
-    // Leak the frames (they are managed by process lifetime)
     core::mem::forget(kernel_stack);
 
-    // Map kernel space into user page table (identity mapping for kernel)
+    // Map kernel space into user page table
     {
         let kernel_space = KERNEL_SPACE.lock();
-        // Copy kernel mappings
         let kernel_root = kernel_space.page_table.root_ppn();
         let user_root = proc.memory_set.page_table.root_ppn();
-
-        // Copy the upper half entries (kernel space)
         let kernel_entries = kernel_root.as_pte_array();
         let user_entries = user_root.as_pte_array();
-        for i in 256..512 {
-            user_entries[i] = kernel_entries[i];
-        }
-        // Also copy lower entries that map kernel identity
-        for i in 0..256 {
+        for i in 0..512 {
             if kernel_entries[i].is_valid() {
                 user_entries[i] = kernel_entries[i];
             }
         }
     }
 
-    let mut max_end_va = 0usize;
+    // Base address for PIE executables
+    let pie_base: usize = if is_pie { 0x4000_0000 } else { 0 };
 
     // Load ELF segments
+    let mut max_end_va = 0usize;
+    let mut phdr_va = 0usize;
+
     for ph in elf.program_iter() {
-        if ph.get_type().unwrap() == Type::Load {
-            let start_va = ph.virtual_addr() as usize;
-            let end_va = start_va + ph.mem_size() as usize;
+        match ph.get_type().unwrap() {
+            Type::Load => {
+                let start_va = pie_base + ph.virtual_addr() as usize;
+                let end_va = start_va + ph.mem_size() as usize;
+                let offset = ph.offset() as usize;
+                let file_size = ph.file_size() as usize;
+
+                let mut perm = PTEFlags::U;
+                let flags = ph.flags();
+                if flags.is_read() { perm |= PTEFlags::R; }
+                if flags.is_write() { perm |= PTEFlags::W; }
+                if flags.is_execute() { perm |= PTEFlags::X; }
+
+                println!("[ELF] LOAD: [{:#x}, {:#x}) perm={:?}", start_va, end_va, perm);
+                map_and_copy(&mut proc.memory_set.page_table, start_va, end_va,
+                    &elf_data[offset..offset + file_size], perm);
+
+                if end_va > max_end_va { max_end_va = end_va; }
+            }
+            Type::Phdr => {
+                phdr_va = pie_base + ph.virtual_addr() as usize;
+            }
+            _ => {}
+        }
+    }
+
+    // Check for PT_INTERP (dynamic linker)
+    let mut interp_entry = 0usize;
+    let mut interp_base = 0usize;
+    let mut has_interp = false;
+
+    for ph in elf.program_iter() {
+        if ph.get_type().unwrap() == Type::Interp {
             let offset = ph.offset() as usize;
-            let file_size = ph.file_size() as usize;
+            let size = ph.file_size() as usize;
+            let interp_path_bytes = &elf_data[offset..offset + size];
+            let interp_path = core::str::from_utf8(interp_path_bytes)
+                .unwrap()
+                .trim_end_matches('\0');
+            println!("[ELF] Dynamic linker: {}", interp_path);
 
-            let mut perm = PTEFlags::U;
-            let flags = ph.flags();
-            if flags.is_read() {
-                perm |= PTEFlags::R;
-            }
-            if flags.is_write() {
-                perm |= PTEFlags::W;
-            }
-            if flags.is_execute() {
-                perm |= PTEFlags::X;
-            }
+            // Load the dynamic linker
+            let fs = RAMFS.lock();
+            if let Some(interp_file) = fs.get_file(interp_path) {
+                let interp_data = interp_file.data;
+                drop(fs);
 
-            println!("[ELF] LOAD segment: [{:#x}, {:#x}) flags={:?}", start_va, end_va, perm);
+                let interp_elf = ElfFile::new(interp_data).expect("Invalid interp ELF");
+                interp_base = 0x7000_0000; // Load interp at this base
+                interp_entry = interp_base + interp_elf.header.pt2.entry_point() as usize;
 
-            // Map pages
-            let start_vpn = VirtAddr(start_va).floor();
-            let end_vpn = VirtAddr(end_va).ceil();
+                for ph in interp_elf.program_iter() {
+                    if ph.get_type().unwrap() == Type::Load {
+                        let start_va = interp_base + ph.virtual_addr() as usize;
+                        let end_va = start_va + ph.mem_size() as usize;
+                        let offset = ph.offset() as usize;
+                        let file_size = ph.file_size() as usize;
 
-            for vpn_val in start_vpn.0..end_vpn.0 {
-                let vpn = VirtPageNum(vpn_val);
-                let frame = crate::mm::frame_alloc().expect("Failed to allocate frame for ELF");
-                let ppn = frame.ppn;
-                proc.memory_set.page_table.map(vpn, ppn, perm);
-                core::mem::forget(frame); // Process manages the lifetime
-            }
+                        let mut perm = PTEFlags::U;
+                        let flags = ph.flags();
+                        if flags.is_read() { perm |= PTEFlags::R; }
+                        if flags.is_write() { perm |= PTEFlags::W; }
+                        if flags.is_execute() { perm |= PTEFlags::X; }
 
-            // Copy data
-            if file_size > 0 {
-                let data = &elf_data[offset..offset + file_size];
-                let mut copied = 0;
-                let page_offset = start_va & (PAGE_SIZE - 1);
+                        println!("[ELF] INTERP LOAD: [{:#x}, {:#x}) perm={:?}", start_va, end_va, perm);
+                        map_and_copy(&mut proc.memory_set.page_table, start_va, end_va,
+                            &interp_data[offset..offset + file_size], perm);
 
-                for vpn_val in start_vpn.0..end_vpn.0 {
-                    let vpn = VirtPageNum(vpn_val);
-                    let pte = proc.memory_set.page_table.translate(vpn).unwrap();
-                    let dst_page = pte.ppn().as_bytes_mut();
-
-                    let dst_start = if vpn_val == start_vpn.0 { page_offset } else { 0 };
-                    let copy_len = core::cmp::min(PAGE_SIZE - dst_start, file_size - copied);
-                    if copied < file_size {
-                        let actual_copy = core::cmp::min(copy_len, file_size - copied);
-                        dst_page[dst_start..dst_start + actual_copy]
-                            .copy_from_slice(&data[copied..copied + actual_copy]);
-                        copied += actual_copy;
+                        if end_va > max_end_va { max_end_va = end_va; }
                     }
                 }
-            }
-
-            if end_va > max_end_va {
-                max_end_va = end_va;
+                has_interp = true;
+                println!("[ELF] Interp loaded at base={:#x}, entry={:#x}", interp_base, interp_entry);
+            } else {
+                drop(fs);
+                panic!("Dynamic linker {} not found!", interp_path);
             }
         }
     }
 
-    // Set up heap (starts after the last segment, page-aligned)
+    // Set up heap
     let heap_start = (max_end_va + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
     proc.brk = heap_start;
     proc.brk_start = heap_start;
     proc.heap_bottom = heap_start;
 
-    // Set up user stack (at a high address)
+    // Set up user stack
     let user_stack_top = 0x7fff_f000usize;
-    let user_stack_bottom = user_stack_top - USER_STACK_SIZE;
+    let user_stack_size = 256 * PAGE_SIZE; // 1MB stack
+    let user_stack_bottom = user_stack_top - user_stack_size;
     for vpn_val in (user_stack_bottom / PAGE_SIZE)..(user_stack_top / PAGE_SIZE) {
         let vpn = VirtPageNum(vpn_val);
-        let frame = crate::mm::frame_alloc().expect("Failed to allocate frame for stack");
+        let frame = crate::mm::frame_alloc().expect("stack OOM");
         let ppn = frame.ppn;
         proc.memory_set.page_table.map(vpn, ppn, PTEFlags::R | PTEFlags::W | PTEFlags::U);
         core::mem::forget(frame);
     }
 
-    // Set up auxiliary vectors and arguments on stack
+    // Build the initial stack
     let mut sp = user_stack_top;
 
-    // For now, simple setup: just set entry point and stack pointer
-    let entry_point = elf_header.pt2.entry_point() as usize;
-
-    // Build the initial stack layout for Linux:
-    // [top of stack]
-    // environment strings
-    // argument strings
-    // padding for alignment
-    // auxv (AT_NULL terminator)
-    // envp[n] = NULL
-    // envp[0..n-1]
-    // argv[n] = NULL
-    // argv[0..n-1]
-    // argc
-    // [sp points here]
-
-    // Write strings to stack first
+    // Write strings first
     let mut env_ptrs = alloc::vec::Vec::new();
     let mut arg_ptrs = alloc::vec::Vec::new();
 
-    // Write environment strings
+    // Write 16 bytes of random data for AT_RANDOM
+    sp -= 16;
+    let random_ptr = sp;
+    let random_data = get_random_bytes();
+    write_user_bytes(&proc.memory_set.page_table, sp, &random_data);
+
     for env in envp.iter().rev() {
         let bytes = env.as_bytes();
-        let len = if bytes.last() == Some(&0) { bytes.len() - 1 } else { bytes.len() };
-        sp -= len + 1; // +1 for null terminator
-        write_user_bytes(&proc.memory_set.page_table, sp, &bytes[..len]);
-        write_user_bytes(&proc.memory_set.page_table, sp + len, &[0]);
+        sp -= bytes.len() + 1;
+        write_user_bytes(&proc.memory_set.page_table, sp, bytes);
+        write_user_bytes(&proc.memory_set.page_table, sp + bytes.len(), &[0]);
         env_ptrs.push(sp);
     }
     env_ptrs.reverse();
 
-    // Write argument strings
     for arg in argv.iter().rev() {
         let bytes = arg.as_bytes();
-        let len = if bytes.last() == Some(&0) { bytes.len() - 1 } else { bytes.len() };
-        sp -= len + 1;
-        write_user_bytes(&proc.memory_set.page_table, sp, &bytes[..len]);
-        write_user_bytes(&proc.memory_set.page_table, sp + len, &[0]);
+        sp -= bytes.len() + 1;
+        write_user_bytes(&proc.memory_set.page_table, sp, bytes);
+        write_user_bytes(&proc.memory_set.page_table, sp + bytes.len(), &[0]);
         arg_ptrs.push(sp);
     }
     arg_ptrs.reverse();
 
-    // Align sp to 16 bytes
+    // Align to 16 bytes
     sp &= !0xF;
 
     // Auxiliary vectors
-    let auxv: [(usize, usize); 5] = [
-        (6, PAGE_SIZE),      // AT_PAGESZ
-        (25, 0),             // AT_RANDOM (pointer to 16 random bytes, we'll use 0)
-        (23, 0),             // AT_SECURE
-        (33, 100),           // AT_MINSIGSTKSZ (dummy)
-        (0, 0),              // AT_NULL
+    let phent = elf_header.pt2.ph_entry_size() as usize;
+    let phnum = elf_header.pt2.ph_count() as usize;
+    // If we have phdr from program header, use it; otherwise calculate from file layout
+    let phdr_addr = if phdr_va != 0 {
+        phdr_va
+    } else {
+        pie_base + elf_header.pt2.ph_offset() as usize
+    };
+
+    let actual_entry = pie_base + entry_point;
+
+    let mut auxv: alloc::vec::Vec<(usize, usize)> = alloc::vec![
+        (3, phdr_addr),              // AT_PHDR
+        (4, phent),                  // AT_PHENT
+        (5, phnum),                  // AT_PHNUM
+        (6, PAGE_SIZE),              // AT_PAGESZ
+        (9, actual_entry),           // AT_ENTRY
+        (25, random_ptr),            // AT_RANDOM
+        (23, 0),                     // AT_SECURE
+        (16, 0),                     // AT_HWCAP
     ];
 
-    // Push aux vectors
+    if has_interp {
+        auxv.push((7, interp_base)); // AT_BASE
+    }
+
+    auxv.push((0, 0)); // AT_NULL
+
+    // Push auxv
     for &(key, val) in auxv.iter().rev() {
         sp -= 8;
         write_user_usize(&proc.memory_set.page_table, sp, val);
@@ -210,21 +249,17 @@ pub fn load_elf_process(elf_data: &[u8], argv: &[&str], envp: &[&str]) {
         write_user_usize(&proc.memory_set.page_table, sp, key);
     }
 
-    // Push envp NULL terminator
+    // Push envp NULL
     sp -= 8;
     write_user_usize(&proc.memory_set.page_table, sp, 0);
-
-    // Push envp pointers
     for ptr in env_ptrs.iter().rev() {
         sp -= 8;
         write_user_usize(&proc.memory_set.page_table, sp, *ptr);
     }
 
-    // Push argv NULL terminator
+    // Push argv NULL
     sp -= 8;
     write_user_usize(&proc.memory_set.page_table, sp, 0);
-
-    // Push argv pointers
     for ptr in arg_ptrs.iter().rev() {
         sp -= 8;
         write_user_usize(&proc.memory_set.page_table, sp, *ptr);
@@ -234,27 +269,20 @@ pub fn load_elf_process(elf_data: &[u8], argv: &[&str], envp: &[&str]) {
     sp -= 8;
     write_user_usize(&proc.memory_set.page_table, sp, argv.len());
 
-    println!("[ELF] Entry: {:#x}, SP: {:#x}, PID: {}", entry_point, sp, proc.pid);
+    // Choose entry point: dynamic linker if present, otherwise the ELF entry
+    let real_entry = if has_interp { interp_entry } else { actual_entry };
 
-    // Set up trap context for returning to user space
+    println!("[ELF] Final entry: {:#x}, SP: {:#x}, PID: {}", real_entry, sp, proc.pid);
+
     let kernel_satp = KERNEL_SPACE.lock().token();
     proc.trap_cx = TrapContext::app_init_context(
-        entry_point,
-        sp,
-        kernel_satp,
-        kernel_stack_top,
+        real_entry, sp, kernel_satp, kernel_stack_top,
         crate::trap::trap_handler as usize,
     );
 
-    // Set up task context so that when we switch to this task,
-    // it returns to __restore which will restore the trap context
-    extern "C" {
-        fn __restore();
-    }
     proc.task_cx.ra = trap_return as usize;
     proc.task_cx.sp = kernel_stack_top - core::mem::size_of::<TrapContext>();
 
-    // Copy trap context to kernel stack top
     unsafe {
         let cx_ptr = proc.task_cx.sp as *mut TrapContext;
         *cx_ptr = proc.trap_cx.clone();
@@ -264,31 +292,62 @@ pub fn load_elf_process(elf_data: &[u8], argv: &[&str], envp: &[&str]) {
     add_process(proc);
 }
 
+fn map_and_copy(page_table: &mut PageTable, start_va: usize, end_va: usize, data: &[u8], perm: PTEFlags) {
+    let start_vpn = VirtAddr(start_va).floor();
+    let end_vpn = VirtAddr(end_va).ceil();
+
+    for vpn_val in start_vpn.0..end_vpn.0 {
+        let vpn = VirtPageNum(vpn_val);
+        // Check if already mapped
+        if page_table.translate(vpn).is_some() {
+            // Already mapped (e.g., overlapping segments), skip mapping but still copy data
+        } else {
+            let frame = crate::mm::frame_alloc().expect("OOM in ELF load");
+            let ppn = frame.ppn;
+            // Use RWX for initial mapping (to allow writing), will be restricted later via mprotect
+            page_table.map(vpn, ppn, perm | PTEFlags::W);
+            core::mem::forget(frame);
+        }
+    }
+
+    // Copy data
+    if data.is_empty() { return; }
+    let mut copied = 0;
+    let page_offset = start_va & (PAGE_SIZE - 1);
+
+    for vpn_val in start_vpn.0..end_vpn.0 {
+        if copied >= data.len() { break; }
+        let vpn = VirtPageNum(vpn_val);
+        let pte = page_table.translate(vpn).unwrap();
+        let dst_page = pte.ppn().as_bytes_mut();
+        let dst_start = if vpn_val == start_vpn.0 { page_offset } else { 0 };
+        let copy_len = core::cmp::min(PAGE_SIZE - dst_start, data.len() - copied);
+        dst_page[dst_start..dst_start + copy_len]
+            .copy_from_slice(&data[copied..copied + copy_len]);
+        copied += copy_len;
+    }
+}
+
 fn trap_return() {
-    // This function is called when switching to a new process
-    // It sets up the user page table and jumps to __restore
     let proc = current_process();
     let p = proc.lock();
     let satp = p.token();
+    let trap_cx = p.trap_cx.clone();
     let kernel_sp = p.kernel_stack + KERNEL_STACK_SIZE;
-    let trap_cx = &p.trap_cx;
+    drop(p);
 
-    // Copy trap context to top of kernel stack
     unsafe {
-        let sp = kernel_sp - core::mem::size_of::<TrapContext>();
-        let cx_ptr = sp as *mut TrapContext;
-        *cx_ptr = trap_cx.clone();
-
-        // Set sscratch to user sp
-        core::arch::asm!("csrw sscratch, {}", in(reg) trap_cx.x[2]);
-        core::arch::asm!("csrw sstatus, {}", in(reg) trap_cx.sstatus);
-        core::arch::asm!("csrw sepc, {}", in(reg) trap_cx.sepc);
-
-        // Switch to user page table
         riscv::register::satp::write(satp);
         core::arch::asm!("sfence.vma");
 
-        // Set sp and restore
+        let sp = kernel_sp - core::mem::size_of::<TrapContext>();
+        let cx_ptr = sp as *mut TrapContext;
+        *cx_ptr = trap_cx;
+
+        core::arch::asm!("csrw sscratch, {}", in(reg) (*cx_ptr).x[2]);
+        core::arch::asm!("csrw sstatus, {}", in(reg) (*cx_ptr).sstatus);
+        core::arch::asm!("csrw sepc, {}", in(reg) (*cx_ptr).sepc);
+
         core::arch::asm!(
             "mv sp, {sp}",
             "ld x1, 1*8(sp)",
@@ -329,20 +388,27 @@ fn trap_return() {
     }
 }
 
-fn write_user_bytes(page_table: &crate::mm::PageTable, va: usize, data: &[u8]) {
+fn write_user_bytes(page_table: &PageTable, va: usize, data: &[u8]) {
     for (i, &byte) in data.iter().enumerate() {
         let addr = va + i;
         let vpn = VirtPageNum(addr / PAGE_SIZE);
         if let Some(pte) = page_table.translate(vpn) {
             let pa = pte.ppn().addr().0 + (addr & (PAGE_SIZE - 1));
-            unsafe {
-                *(pa as *mut u8) = byte;
-            }
+            unsafe { *(pa as *mut u8) = byte; }
         }
     }
 }
 
-fn write_user_usize(page_table: &crate::mm::PageTable, va: usize, value: usize) {
-    let bytes = value.to_le_bytes();
-    write_user_bytes(page_table, va, &bytes);
+fn write_user_usize(page_table: &PageTable, va: usize, value: usize) {
+    write_user_bytes(page_table, va, &value.to_le_bytes());
+}
+
+fn get_random_bytes() -> [u8; 16] {
+    let mut seed = riscv::register::time::read() as u64;
+    let mut bytes = [0u8; 16];
+    for b in bytes.iter_mut() {
+        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        *b = (seed >> 33) as u8;
+    }
+    bytes
 }
