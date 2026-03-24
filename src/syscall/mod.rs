@@ -1103,20 +1103,18 @@ fn sys_epoll_ctl(epfd: usize, op: i32, fd: usize, event: usize) -> isize {
 }
 
 fn sys_epoll_pwait(epfd: usize, events_ptr: usize, maxevents: i32, timeout: i32, sigmask: usize) -> isize {
-    // Poll network and check if any registered fds have events
     let start = get_time_us();
     let timeout_us = if timeout > 0 { timeout as u64 * 1000 } else if timeout == 0 { 0 } else { u64::MAX };
+    let mut poll_count = 0u64;
 
     loop {
-        // Poll the network stack
         crate::net::poll_net();
+        poll_count += 1;
 
-        // Check if any sockets have events
         let has_connection = crate::net::check_tcp_accept();
 
         if has_connection {
-            // Return EPOLLIN event for the listening socket
-            // Find the listening socket fd from epoll entries
+            println!("[epoll] Connection detected after {} polls!", poll_count);
             let proc = crate::process::current_process();
             let p = proc.lock();
             if let Some(fd_obj) = p.get_fd(epfd) {
@@ -1125,15 +1123,14 @@ fn sys_epoll_pwait(epfd: usize, events_ptr: usize, maxevents: i32, timeout: i32,
                 if let crate::fs::FileDescriptor::Epoll { instance } = &*f {
                     let inst = instance.lock();
                     if let Some(entry) = inst.entries.first() {
-                        // Write epoll_event struct: {events: u32, data: u64}
                         let mut ev_buf = [0u8; 12];
-                        let epollin: u32 = 0x001; // EPOLLIN
+                        let epollin: u32 = 0x001;
                         ev_buf[0..4].copy_from_slice(&epollin.to_le_bytes());
                         ev_buf[4..12].copy_from_slice(&entry.data.to_le_bytes());
                         drop(inst);
                         drop(f);
                         write_user_data(events_ptr, &ev_buf);
-                        return 1; // 1 event
+                        return 1;
                     }
                 }
             }
@@ -1142,10 +1139,14 @@ fn sys_epoll_pwait(epfd: usize, events_ptr: usize, maxevents: i32, timeout: i32,
         if timeout == 0 { return 0; }
 
         let elapsed = get_time_us() - start;
-        if elapsed >= timeout_us { return 0; }
+        if elapsed >= timeout_us {
+            if poll_count > 1 {
+                println!("[epoll] timeout after {} polls, {}ms", poll_count, elapsed / 1000);
+            }
+            return 0;
+        }
 
-        // Brief sleep
-        for _ in 0..10000 { core::hint::spin_loop(); }
+        for _ in 0..1000 { core::hint::spin_loop(); }
     }
 }
 
