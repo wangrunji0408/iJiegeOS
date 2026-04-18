@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
-members = ["kernel", "user/hello"]
+members = ["kernel"]
+exclude = ["user"]
 
 [profile.release]
 lto = "fat"
