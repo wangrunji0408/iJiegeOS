@@ -57,11 +57,14 @@ pub struct StaticFile {
     pub path: String,
     pub data: &'static [u8],
     pub pos: Mutex<u64>,
+    pub ino: u64,
 }
 
 impl StaticFile {
     pub fn new(path: &str, data: &'static [u8]) -> Arc<Self> {
-        Arc::new(Self { path: path.to_string(), data, pos: Mutex::new(0) })
+        use core::sync::atomic::{AtomicU64, Ordering};
+        static INO: AtomicU64 = AtomicU64::new(1000);
+        Arc::new(Self { path: path.to_string(), data, pos: Mutex::new(0), ino: INO.fetch_add(1, Ordering::Relaxed) })
     }
 }
 
@@ -99,6 +102,7 @@ impl File for StaticFile {
     fn path(&self) -> &str { &self.path }
     fn as_bytes(&self) -> Option<&[u8]> { Some(self.data) }
     fn writable(&self) -> bool { false }
+    fn inode_id(&self) -> u64 { self.ino }
 }
 
 // RW in-memory file (log files etc.)
