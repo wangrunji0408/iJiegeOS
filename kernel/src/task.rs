@@ -99,11 +99,13 @@ impl Task {
         let trap_cx = Box::new(UnsafeCell::new(cx));
         crate::println!("[kernel] trap cx built");
         let mut files = FileTable::new();
+        crate::println!("[kernel] file table built");
         // fd 0..3 are stdin/out/err
         files.alloc(Arc::new(crate::fs::Stdin)).unwrap();
         files.alloc(Arc::new(crate::fs::Stdout)).unwrap();
         files.alloc(Arc::new(crate::fs::Stderr)).unwrap();
-        Arc::new(Self {
+        crate::println!("[kernel] stdio fds assigned");
+        let task = Arc::new(Self {
             pid: next_pid(),
             memory: Mutex::new(memory),
             kstack,
@@ -117,7 +119,9 @@ impl Task {
             files: Mutex::new(files),
             parent: Mutex::new(None),
             children: Mutex::new(Vec::new()),
-        })
+        });
+        crate::println!("[kernel] Task created pid={}", task.pid);
+        task
     }
 
     pub fn trap_cx_ptr(&self) -> *mut TrapContext { self.trap_cx.get() }
