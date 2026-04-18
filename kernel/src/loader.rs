@@ -70,13 +70,15 @@ pub fn map_elf(ms: &mut MemorySet, data: &[u8], base: usize) -> ElfInfo {
 
     use crate::mm::frame::alloc as alloc_frame;
     let mut frames: BTreeMap<usize, crate::mm::frame::FrameTracker> = BTreeMap::new();
+    let mut cnt = 0usize;
     for (&vpn, &perm) in &page_perm {
-        // Skip if already mapped (shouldn't happen for a single ELF)
         if ms.page_table.find_pte(VirtPageNum(vpn)).is_some() { continue; }
         let f = alloc_frame().expect("no frame");
         ms.page_table.map(VirtPageNum(vpn), f.ppn, perm.into());
         frames.insert(vpn, f);
+        cnt += 1;
     }
+    crate::println!("[load] mapped {} frames", cnt);
 
     for ph in elf.program_iter() {
         if ph.get_type() == Ok(PhType::Load) {
