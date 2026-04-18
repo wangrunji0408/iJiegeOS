@@ -60,6 +60,8 @@ fn dispatch_inner(id: usize, args: [usize; 6], _cx: &mut TrapContext) -> isize {
         SYS_READLINKAT => sys_readlinkat(args[0] as i32, args[1], args[2], args[3]),
         SYS_GETCWD => sys_getcwd(args[0], args[1]),
         SYS_CHDIR => 0,
+        SYS_MKDIRAT => 0,
+        SYS_UMOUNT2 | SYS_MOUNT => 0,
         SYS_FACCESSAT => sys_faccessat(args[0] as i32, args[1], args[2] as i32, args[3] as i32),
         SYS_MMAP => sys_mmap(args[0], args[1], args[2] as i32, args[3] as i32, args[4] as i32, args[5] as u64),
         SYS_MUNMAP => sys_munmap(args[0], args[1]),
