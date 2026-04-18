@@ -57,6 +57,7 @@ fn dispatch_inner(id: usize, args: [usize; 6], _cx: &mut TrapContext) -> isize {
         SYS_NEWFSTATAT => sys_newfstatat(args[0] as i32, args[1], args[2], args[3] as i32),
         SYS_LSEEK => sys_lseek(args[0] as i32, args[1] as isize, args[2] as u32),
         SYS_PREAD64 => sys_pread(args[0] as i32, args[1], args[2], args[3] as u64),
+        SYS_PWRITE64 => sys_pwrite(args[0] as i32, args[1], args[2], args[3] as u64),
         SYS_READLINKAT => sys_readlinkat(args[0] as i32, args[1], args[2], args[3]),
         SYS_GETCWD => sys_getcwd(args[0], args[1]),
         SYS_CHDIR => 0,
@@ -358,6 +359,14 @@ fn sys_pread(fd: i32, buf: usize, len: usize, off: u64) -> isize {
     let n = file.pread(&mut tmp, off);
     if n > 0 { current_pt_write(buf, &tmp[..n as usize]); }
     n
+}
+
+fn sys_pwrite(fd: i32, buf: usize, len: usize, _off: u64) -> isize {
+    let data = current_pt_read(buf, len);
+    let t = crate::task::current();
+    let Some(file) = t.files.lock().get(fd) else { return -9 };
+    // Treat pwrite as write (our memfs doesn't track seek independently of write)
+    file.write(&data)
 }
 
 fn sys_readlinkat(_dirfd: i32, path: usize, buf: usize, sz: usize) -> isize {
