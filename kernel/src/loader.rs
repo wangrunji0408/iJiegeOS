@@ -101,6 +101,8 @@ pub fn kernel_identity_space() -> MemorySet {
         fn ekernel();
     }
     let s = |f: unsafe extern "C" fn()| f as *const () as usize;
+    crate::println!("[kernel] sym text={:#x}..{:#x} rodata={:#x}..{:#x} data={:#x}..{:#x} bss={:#x}..{:#x} ekernel={:#x}",
+        s(stext), s(etext), s(srodata), s(erodata), s(sdata), s(edata), s(sbss), s(ebss), s(ekernel));
     ms.push_identity(s(stext), s(etext), MapPerm::R | MapPerm::X);
     ms.push_identity(s(srodata), s(erodata), MapPerm::R);
     ms.push_identity(s(sdata), s(edata), MapPerm::R | MapPerm::W);
