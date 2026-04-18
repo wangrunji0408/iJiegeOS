@@ -375,11 +375,11 @@ fn sys_mmap(addr: usize, length: usize, prot: i32, flags: i32, fd: i32, offset: 
         *top &= !(PAGE_SIZE - 1);
         *top
     };
+    crate::println!("[mmap] va={:#x} len={:#x} prot={:#x} flags={:#x} fd={} off={:#x}",
+        va, len, prot, flags, fd, offset);
 
-    // Allocate a framed area, map with perm (force R during copy if file-backed)
     {
         let mut ms = t.memory.lock();
-        // If MAP_FIXED: unmap existing mappings in range
         if flags & MAP_FIXED != 0 {
             let svpn = VirtAddr(va).floor();
             let evpn = VirtAddr(va + len).ceil();
@@ -388,17 +388,13 @@ fn sys_mmap(addr: usize, length: usize, prot: i32, flags: i32, fd: i32, offset: 
                     ms.page_table.unmap(VirtPageNum(vpn));
                 }
             }
-            // Also drop any MapArea tracking them — simplified: leak; kernel demo
         }
-        // Use R|W to allow kernel to populate; we can't easily mprotect afterwards
-        // without tracking areas finely, so leave perm permissive.
         let eff_perm = perm | MapPerm::R | MapPerm::W;
         let mut area = MapArea::new(VirtAddr(va), VirtAddr(va + len), eff_perm, MapType::Framed);
         area.map(&mut ms.page_table);
         ms.areas.push(area);
     }
 
-    // File-backed: read contents in
     if flags & MAP_ANONYMOUS == 0 && fd >= 0 {
         let file = match t.files.lock().get(fd) { Some(f) => f, None => return -9 };
         let mut tmp = alloc::vec![0u8; len];
