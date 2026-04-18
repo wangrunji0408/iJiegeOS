@@ -118,17 +118,21 @@ pub fn map_elf(ms: &mut MemorySet, data: &[u8], base: usize) -> ElfInfo {
 
 pub fn load_program(main_data: &[u8], interp_data: Option<&[u8]>) -> LoadedElf {
     let mut ms = kernel_identity_space();
+    crate::println!("[load] kernel_identity_space built");
 
-    // Determine if main is PIE (ET_DYN) — if so, pick a base.
     let is_pie = xmas_elf::ElfFile::new(main_data).unwrap().header.pt2.type_().as_type()
         == xmas_elf::header::Type::SharedObject;
+    crate::println!("[load] main is_pie={}", is_pie);
 
     let main_base = if is_pie { 0x1000_0000 } else { 0 };
     let main = map_elf(&mut ms, main_data, main_base);
+    crate::println!("[load] main mapped entry={:#x}", main.entry);
 
     let interp = interp_data.map(|idata| {
         let interp_base = 0x2000_0000;
-        map_elf(&mut ms, idata, interp_base)
+        let r = map_elf(&mut ms, idata, interp_base);
+        crate::println!("[load] interp mapped entry={:#x}", r.entry);
+        r
     });
 
     let program_break = (main.max_end_va + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
