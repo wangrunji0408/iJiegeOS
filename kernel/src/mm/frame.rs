@@ -55,7 +55,7 @@ static FRAME_ALLOCATOR: Mutex<StackFrameAllocator> = Mutex::new(StackFrameAlloca
 
 pub fn init_frame_allocator() {
     extern "C" { fn ekernel(); }
-    let start = PhysAddr(ekernel as usize).ceil();
+    let start = PhysAddr(ekernel as *const () as usize).ceil();
     // qemu-virt default has RAM 0x80000000 - 0x80000000 + memory. We set 512 MiB
     let end = PhysAddr(0x80000000 + 512 * 1024 * 1024).floor();
     FRAME_ALLOCATOR.lock().init(start, end);
