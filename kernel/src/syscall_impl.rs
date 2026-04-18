@@ -262,10 +262,19 @@ fn resolve_path(dirfd: i32, path: &str) -> String {
     path.into()
 }
 
-fn sys_openat(dirfd: i32, path: usize, _flags: u32, _mode: u32) -> isize {
+const O_CREAT: u32 = 0o100;
+const O_RDWR: u32 = 0o2;
+const O_WRONLY: u32 = 0o1;
+
+fn sys_openat(dirfd: i32, path: usize, flags: u32, _mode: u32) -> isize {
     let p = user_cstr(path);
     let full = resolve_path(dirfd, &p);
-    let result = crate::fs::VFS.open(&full);
+    let writable = flags & (O_CREAT | O_RDWR | O_WRONLY) != 0;
+    let result = if writable {
+        crate::fs::VFS.open_or_create_writable(&full)
+    } else {
+        crate::fs::VFS.open(&full)
+    };
     let Some(file) = result else {
         return -2;
     };

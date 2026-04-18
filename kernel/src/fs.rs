@@ -52,6 +52,33 @@ impl File for Stderr {
     fn readable(&self) -> bool { false }
 }
 
+pub struct DevNull;
+pub struct DevZero;
+pub struct DevRandom;
+
+impl File for DevNull {
+    fn read(&self, _buf: &mut [u8]) -> isize { 0 }
+    fn write(&self, buf: &[u8]) -> isize { buf.len() as isize }
+    fn pread(&self, _buf: &mut [u8], _off: u64) -> isize { 0 }
+}
+impl File for DevZero {
+    fn read(&self, buf: &mut [u8]) -> isize { for b in buf.iter_mut() { *b = 0; } buf.len() as isize }
+    fn write(&self, buf: &[u8]) -> isize { buf.len() as isize }
+    fn pread(&self, buf: &mut [u8], _off: u64) -> isize { for b in buf.iter_mut() { *b = 0; } buf.len() as isize }
+}
+impl File for DevRandom {
+    fn read(&self, buf: &mut [u8]) -> isize {
+        let mut s = crate::timer::now_ns();
+        for b in buf.iter_mut() {
+            s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            *b = (s >> 33) as u8;
+        }
+        buf.len() as isize
+    }
+    fn write(&self, buf: &[u8]) -> isize { buf.len() as isize }
+    fn pread(&self, buf: &mut [u8], _off: u64) -> isize { self.read(buf) }
+}
+
 // Backed by a static byte slice — mmap-able without copying.
 pub struct StaticFile {
     pub path: String,
@@ -267,12 +294,27 @@ impl Vfs {
     }
 
     pub fn open(&self, path: &str) -> Option<Arc<dyn File>> {
+        // Special /dev/ files
+        match path {
+            "/dev/stderr" | "/dev/stdout" => return Some(Arc::new(Stdout)),
+            "/dev/stdin" => return Some(Arc::new(Stdin)),
+            "/dev/null" => return Some(Arc::new(DevNull)),
+            "/dev/zero" => return Some(Arc::new(DevZero)),
+            "/dev/urandom" | "/dev/random" => return Some(Arc::new(DevRandom)),
+            _ => {}
+        }
         let real = self.resolve(path)?;
         let e = self.entries.lock();
         let ent = e.get(&real)?;
         if ent.is_dir { return None; }
         let data = ent.data?;
         Some(StaticFile::new(&real, data))
+    }
+
+    pub fn open_or_create_writable(&self, path: &str) -> Option<Arc<dyn File>> {
+        // For writable/newly-created files, back them with a MemFile
+        if self.exists(path) { return self.open(path); }
+        Some(MemFile::new_rw(path, Vec::new()))
     }
 
     pub fn exists(&self, path: &str) -> bool {
