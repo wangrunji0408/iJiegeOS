@@ -8,6 +8,32 @@ use alloc::sync::Arc;
 use alloc::string::String;
 
 pub fn dispatch(id: usize, args: [usize; 6], _cx: &mut TrapContext) -> isize {
+    // Trace every syscall (disabled by default to avoid flooding)
+    static TRACE: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(true);
+    if TRACE.load(core::sync::atomic::Ordering::Relaxed) {
+        let name = match id {
+            SYS_WRITE => "write", SYS_READ => "read", SYS_WRITEV => "writev", SYS_READV => "readv",
+            SYS_CLOSE => "close", SYS_OPENAT => "openat", SYS_FSTAT => "fstat",
+            SYS_NEWFSTATAT => "newfstatat", SYS_LSEEK => "lseek", SYS_PREAD64 => "pread",
+            SYS_MMAP => "mmap", SYS_MUNMAP => "munmap", SYS_MPROTECT => "mprotect",
+            SYS_BRK => "brk", SYS_RT_SIGACTION => "rt_sigaction",
+            SYS_RT_SIGPROCMASK => "rt_sigprocmask", SYS_UNAME => "uname",
+            SYS_GETRANDOM => "getrandom", SYS_PRLIMIT64 => "prlimit64",
+            SYS_IOCTL => "ioctl", SYS_FCNTL => "fcntl", SYS_SOCKET => "socket",
+            SYS_BIND => "bind", SYS_LISTEN => "listen", SYS_ACCEPT => "accept",
+            SYS_EXIT => "exit", SYS_EXIT_GROUP => "exit_group",
+            SYS_SET_TID_ADDRESS => "set_tid", SYS_CLOCK_GETTIME => "clock_gettime",
+            SYS_GETTIMEOFDAY => "gettimeofday", SYS_GETPID => "getpid",
+            SYS_READLINKAT => "readlinkat", SYS_FACCESSAT => "faccessat",
+            SYS_GETCWD => "getcwd", SYS_CHDIR => "chdir",
+            _ => "?",
+        };
+        crate::println!("[sc] {}({}) {:#x?}", name, id, args);
+    }
+    dispatch_inner(id, args, _cx)
+}
+
+fn dispatch_inner(id: usize, args: [usize; 6], _cx: &mut TrapContext) -> isize {
     match id {
         SYS_WRITE => sys_write(args[0] as i32, args[1], args[2]),
         SYS_READ => sys_read(args[0] as i32, args[1], args[2]),
@@ -240,7 +266,6 @@ fn sys_openat(dirfd: i32, path: usize, _flags: u32, _mode: u32) -> isize {
     let p = user_cstr(path);
     let full = resolve_path(dirfd, &p);
     let result = crate::fs::VFS.open(&full);
-    crate::println!("[open] {} -> {}", full, if result.is_some() { "ok" } else { "enoent" });
     let Some(file) = result else {
         return -2;
     };
@@ -375,8 +400,6 @@ fn sys_mmap(addr: usize, length: usize, prot: i32, flags: i32, fd: i32, offset: 
         *top &= !(PAGE_SIZE - 1);
         *top
     };
-    crate::println!("[mmap] va={:#x} len={:#x} prot={:#x} flags={:#x} fd={} off={:#x}",
-        va, len, prot, flags, fd, offset);
 
     {
         let mut ms = t.memory.lock();
