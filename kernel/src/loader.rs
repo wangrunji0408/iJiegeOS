@@ -5,34 +5,44 @@ use alloc::collections::BTreeMap;
 use xmas_elf::program::Type as PhType;
 
 pub const USER_STACK_TOP: usize = 0x4000_0000;
-pub const USER_STACK_SIZE: usize = 64 * PAGE_SIZE;
+pub const USER_STACK_SIZE: usize = 128 * PAGE_SIZE;
+
+#[derive(Default)]
+pub struct ElfInfo {
+    pub entry: usize,
+    pub phdr: usize,
+    pub phnum: usize,
+    pub phent: usize,
+    pub max_end_va: usize,
+    pub min_base: usize,
+    pub base: usize,
+}
 
 pub struct LoadedElf {
     pub memory: MemorySet,
-    pub entry: usize,
+    pub main: ElfInfo,
+    pub interp: Option<ElfInfo>,
     pub stack_top: usize,
     pub program_break: usize,
-    pub auxv_phdr: usize,
-    pub phnum: usize,
-    pub phent: usize,
 }
 
-pub fn load_elf(data: &[u8]) -> LoadedElf {
+/// Map an ELF into `ms` at base. If ELF is PIE (EXEC with p_vaddr==0 or DYN),
+/// segments are shifted by `base`. Returns ElfInfo.
+pub fn map_elf(ms: &mut MemorySet, data: &[u8], base: usize) -> ElfInfo {
     let elf = xmas_elf::ElfFile::new(data).expect("bad elf");
     let hdr = elf.header;
     assert_eq!(hdr.pt1.magic, [0x7f, b'E', b'L', b'F']);
 
-    let mut ms = kernel_identity_space();
-
     let mut page_perm: BTreeMap<usize, MapPerm> = BTreeMap::new();
-    let mut max_end_va: usize = 0;
-    let mut phdr_addr: usize = 0;
-    let phnum = hdr.pt2.ph_count() as usize;
-    let phent = hdr.pt2.ph_entry_size() as usize;
+    let mut info = ElfInfo::default();
+    info.base = base;
+    info.phnum = hdr.pt2.ph_count() as usize;
+    info.phent = hdr.pt2.ph_entry_size() as usize;
+    let mut min_base: usize = usize::MAX;
 
     for ph in elf.program_iter() {
         if ph.get_type() == Ok(PhType::Load) {
-            let start_va = ph.virtual_addr() as usize;
+            let start_va = ph.virtual_addr() as usize + base;
             let end_va = start_va + ph.mem_size() as usize;
             let mut perm = MapPerm::U;
             if ph.flags().is_read() { perm |= MapPerm::R; }
@@ -45,18 +55,23 @@ pub fn load_elf(data: &[u8]) -> LoadedElf {
                 let entry = page_perm.entry(vpn).or_insert(MapPerm::U);
                 *entry |= perm;
             }
-            if end_va > max_end_va { max_end_va = end_va; }
+            if end_va > info.max_end_va { info.max_end_va = end_va; }
+            if start_va < min_base { min_base = start_va; }
             if ph.offset() <= hdr.pt2.ph_offset()
                 && hdr.pt2.ph_offset() < ph.offset() + ph.file_size()
             {
-                phdr_addr = start_va + (hdr.pt2.ph_offset() - ph.offset()) as usize;
+                info.phdr = start_va + (hdr.pt2.ph_offset() - ph.offset()) as usize;
             }
         }
     }
+    info.min_base = if min_base == usize::MAX { base } else { min_base };
+    info.entry = hdr.pt2.entry_point() as usize + base;
 
     use crate::mm::frame::alloc as alloc_frame;
     let mut frames: BTreeMap<usize, crate::mm::frame::FrameTracker> = BTreeMap::new();
     for (&vpn, &perm) in &page_perm {
+        // Skip if already mapped (shouldn't happen for a single ELF)
+        if ms.page_table.find_pte(VirtPageNum(vpn)).is_some() { continue; }
         let f = alloc_frame().expect("no frame");
         ms.page_table.map(VirtPageNum(vpn), f.ppn, perm.into());
         frames.insert(vpn, f);
@@ -64,7 +79,7 @@ pub fn load_elf(data: &[u8]) -> LoadedElf {
 
     for ph in elf.program_iter() {
         if ph.get_type() == Ok(PhType::Load) {
-            let start_va = ph.virtual_addr() as usize;
+            let start_va = ph.virtual_addr() as usize + base;
             let file_off = ph.offset() as usize;
             let file_sz = ph.file_size() as usize;
             let src = &data[file_off..file_off + file_sz];
@@ -85,13 +100,32 @@ pub fn load_elf(data: &[u8]) -> LoadedElf {
         }
     }
 
+    // Stash frame ownership in the MemorySet
     let mut hold_area = MapArea::new(VirtAddr(0), VirtAddr(0), MapPerm::U, MapType::Framed);
     for (vpn, f) in frames {
         hold_area.frames.insert(VirtPageNum(vpn), f);
     }
     ms.areas.push(hold_area);
 
-    let program_break = (max_end_va + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
+    info
+}
+
+pub fn load_program(main_data: &[u8], interp_data: Option<&[u8]>) -> LoadedElf {
+    let mut ms = kernel_identity_space();
+
+    // Determine if main is PIE (ET_DYN) — if so, pick a base.
+    let is_pie = xmas_elf::ElfFile::new(main_data).unwrap().header.pt2.type_().as_type()
+        == xmas_elf::header::Type::SharedObject;
+
+    let main_base = if is_pie { 0x1000_0000 } else { 0 };
+    let main = map_elf(&mut ms, main_data, main_base);
+
+    let interp = interp_data.map(|idata| {
+        let interp_base = 0x2000_0000;
+        map_elf(&mut ms, idata, interp_base)
+    });
+
+    let program_break = (main.max_end_va + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
 
     let stack_bottom = USER_STACK_TOP - USER_STACK_SIZE;
     let mut stack_area = MapArea::new(
@@ -105,12 +139,10 @@ pub fn load_elf(data: &[u8]) -> LoadedElf {
 
     LoadedElf {
         memory: ms,
-        entry: hdr.pt2.entry_point() as usize,
+        main,
+        interp,
         stack_top: USER_STACK_TOP,
         program_break,
-        auxv_phdr: phdr_addr,
-        phnum,
-        phent,
     }
 }
 
