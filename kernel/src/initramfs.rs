@@ -26,7 +26,7 @@ events { worker_connections 16; }\n\
 http {\n\
     access_log off;\n\
     default_type application/octet-stream;\n\
-    sendfile on;\n\
+    sendfile off;\n\
     keepalive_timeout 0;\n\
     server {\n\
         listen 80 default_server;\n\
@@ -35,6 +35,11 @@ http {\n\
         index index.html;\n\
     }\n\
 }\n";
+
+static PASSWD: &[u8] = b"root:x:0:0:root:/root:/bin/sh\nnginx:x:100:101:nginx:/var/lib/nginx:/sbin/nologin\n";
+static GROUP: &[u8] = b"root:x:0:\nnginx:x:101:\n";
+static RESOLV_CONF: &[u8] = b"nameserver 8.8.8.8\n";
+static HOSTS: &[u8] = b"127.0.0.1 localhost\n";
 
 static INDEX_HTML: &[u8] = b"<!doctype html>\n<html><body><h1>Hello from iJiege Rust kernel + nginx</h1></body></html>\n";
 
@@ -86,5 +91,9 @@ pub fn load(vfs: &Vfs) {
 
     vfs.insert_file("/etc/nginx/nginx.conf", NGINX_CONF);
     vfs.insert_file("/etc/nginx/mime.types", MIME_TYPES);
+    vfs.insert_file("/etc/passwd", PASSWD);
+    vfs.insert_file("/etc/group", GROUP);
+    vfs.insert_file("/etc/resolv.conf", RESOLV_CONF);
+    vfs.insert_file("/etc/hosts", HOSTS);
     vfs.insert_file("/var/www/index.html", INDEX_HTML);
 }
