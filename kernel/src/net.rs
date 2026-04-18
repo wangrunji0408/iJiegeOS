@@ -198,3 +198,40 @@ pub fn tcp_recv(sock: &Socket, data: &mut [u8]) -> isize {
         Err(_) => -1,
     }
 }
+
+pub fn tcp_can_recv(sock: &Socket) -> bool {
+    let mut net = NET.lock();
+    let Some(net) = net.as_mut() else { return false; };
+    let s = net.sockets.get_mut::<tcp::Socket>(sock.handle);
+    s.may_recv() && s.can_recv()
+}
+
+pub fn tcp_can_send(sock: &Socket) -> bool {
+    let mut net = NET.lock();
+    let Some(net) = net.as_mut() else { return false; };
+    let s = net.sockets.get_mut::<tcp::Socket>(sock.handle);
+    s.may_send() && s.can_send()
+}
+
+pub fn tcp_close(sock: &Socket) {
+    let mut net = NET.lock();
+    if let Some(net) = net.as_mut() {
+        let s = net.sockets.get_mut::<tcp::Socket>(sock.handle);
+        s.close();
+    }
+}
+
+pub fn tcp_remove(sock: &Socket) {
+    let mut net = NET.lock();
+    if let Some(net) = net.as_mut() {
+        net.sockets.remove(sock.handle);
+    }
+}
+
+/// Block-poll the network until `pred` is satisfied.
+pub fn poll_until<F: FnMut() -> bool>(mut pred: F) {
+    while !pred() {
+        poll();
+        unsafe { riscv::asm::wfi(); }
+    }
+}

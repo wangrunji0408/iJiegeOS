@@ -12,10 +12,80 @@ pub trait File: Send + Sync {
     fn is_dir(&self) -> bool { false }
     fn readable(&self) -> bool { true }
     fn writable(&self) -> bool { true }
-    /// Returns (offset in inode, serial). For socket/fifo: 0.
     fn inode_id(&self) -> u64 { 0 }
     fn get_dents(&self, _buf: &mut [u8]) -> isize { -1 }
-    fn as_socket(&self) -> Option<&crate::net::Socket> { None }
+    fn as_socket(&self) -> Option<&SocketFile> { None }
+    fn is_socket(&self) -> bool { false }
+}
+
+pub enum SocketState {
+    Unbound,
+    Listening { port: u16 },
+    Connected,
+}
+
+pub struct SocketFile {
+    pub sock: spin::Mutex<Option<crate::net::Socket>>,
+    pub state: spin::Mutex<SocketState>,
+    pub nonblocking: core::sync::atomic::AtomicBool,
+}
+
+impl SocketFile {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self {
+            sock: spin::Mutex::new(crate::net::tcp_open()),
+            state: spin::Mutex::new(SocketState::Unbound),
+            nonblocking: core::sync::atomic::AtomicBool::new(false),
+        })
+    }
+    pub fn new_empty() -> Arc<Self> {
+        Arc::new(Self {
+            sock: spin::Mutex::new(None),
+            state: spin::Mutex::new(SocketState::Unbound),
+            nonblocking: core::sync::atomic::AtomicBool::new(false),
+        })
+    }
+}
+
+impl File for SocketFile {
+    fn read(&self, buf: &mut [u8]) -> isize {
+        let guard = self.sock.lock();
+        let Some(sock) = guard.as_ref() else { return -9; };
+        // Pump network while waiting for data (blocking mode)
+        if !self.nonblocking.load(core::sync::atomic::Ordering::Relaxed) {
+            loop {
+                crate::net::poll();
+                if crate::net::tcp_can_recv(sock) { break; }
+                if !crate::net::tcp_is_active(sock) { return 0; }
+                // yield-ish: just WFI briefly — timer wakes us
+                unsafe { riscv::asm::wfi(); }
+            }
+        }
+        crate::net::tcp_recv(sock, buf)
+    }
+    fn write(&self, buf: &[u8]) -> isize {
+        let guard = self.sock.lock();
+        let Some(sock) = guard.as_ref() else { return -9; };
+        let mut total = 0isize;
+        let mut off = 0usize;
+        while off < buf.len() {
+            loop {
+                crate::net::poll();
+                if crate::net::tcp_can_send(sock) { break; }
+                if !crate::net::tcp_is_active(sock) { return if total == 0 { -1 } else { total }; }
+                unsafe { riscv::asm::wfi(); }
+            }
+            let n = crate::net::tcp_send(sock, &buf[off..]);
+            if n <= 0 { return if total == 0 { n } else { total }; }
+            off += n as usize;
+            total += n;
+        }
+        total
+    }
+    fn readable(&self) -> bool { true }
+    fn writable(&self) -> bool { true }
+    fn as_socket(&self) -> Option<&SocketFile> { Some(self) }
+    fn is_socket(&self) -> bool { true }
 }
 
 /// Console streams.
