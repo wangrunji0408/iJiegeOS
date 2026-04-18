@@ -60,8 +60,8 @@ pub extern "C" fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
         | Trap::Exception(Exception::InstructionFault) => {
             if crate::task::handle_page_fault(stval) { return cx; }
             crate::println!(
-                "[kernel] PF cause={:?} stval={:#x} sepc={:#x} ra={:#x} sp={:#x}",
-                scause.cause(), stval, cx.sepc, cx.x[1], cx.x[2]
+                "[kernel] PF cause={:?} stval={:#x} sepc={:#x} ra={:#x} sp={:#x} a0={:#x} a1={:#x} a2={:#x} a3={:#x}",
+                scause.cause(), stval, cx.sepc, cx.x[1], cx.x[2], cx.x[10], cx.x[11], cx.x[12], cx.x[13]
             );
             crate::task::exit_current(-11);
         }
