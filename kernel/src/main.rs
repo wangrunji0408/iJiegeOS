@@ -3,6 +3,7 @@
 #![feature(alloc_error_handler)]
 #![allow(dead_code)]
 #![allow(static_mut_refs)]
+#![allow(unused_variables)]
 
 extern crate alloc;
 
@@ -13,7 +14,14 @@ use core::panic::PanicInfo;
 mod console;
 mod heap;
 mod mm;
+mod net;
+mod plic;
 mod sbi;
+mod syscall;
+mod syscall_impl;
+mod task;
+mod timer;
+mod trap;
 
 global_asm!(include_str!("entry.S"));
 
@@ -23,8 +31,13 @@ pub extern "C" fn rust_main(dtb: usize) -> ! {
     println!();
     println!("[kernel] hello from rust, dtb @ {:#x}", dtb);
     mm::init();
-    println!("[kernel] paging active (Sv39)");
-    println!("[kernel] shutting down");
+    trap::init();
+    timer::init();
+    plic::init();
+    net::init();
+    task::init();
+    println!("[kernel] subsystems up");
+    println!("[kernel] shutting down (no user yet)");
     sbi::shutdown(false);
 }
 
