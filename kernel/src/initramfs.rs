@@ -22,16 +22,17 @@ master_process off;\n\
 worker_processes 1;\n\
 error_log /dev/stderr warn;\n\
 pid /run/nginx.pid;\n\
-events { worker_connections 128; }\n\
+events { worker_connections 16; }\n\
 http {\n\
     access_log off;\n\
+    default_type application/octet-stream;\n\
+    sendfile on;\n\
+    keepalive_timeout 0;\n\
     server {\n\
-        listen 80;\n\
+        listen 80 default_server;\n\
         server_name _;\n\
-        location / {\n\
-            root /var/www;\n\
-            index index.html;\n\
-        }\n\
+        root /var/www;\n\
+        index index.html;\n\
     }\n\
 }\n";
 
@@ -58,9 +59,20 @@ pub fn load(vfs: &Vfs) {
     vfs.insert_dir("/var/www");
     vfs.insert_dir("/var/log");
     vfs.insert_dir("/var/log/nginx");
+    vfs.insert_dir("/var/lib");
+    vfs.insert_dir("/var/lib/nginx");
+    vfs.insert_dir("/var/lib/nginx/logs");
+    vfs.insert_dir("/var/lib/nginx/tmp");
+    vfs.insert_dir("/var/lib/nginx/tmp/client_body");
+    vfs.insert_dir("/var/lib/nginx/tmp/fastcgi");
+    vfs.insert_dir("/var/lib/nginx/tmp/proxy");
+    vfs.insert_dir("/var/lib/nginx/tmp/scgi");
+    vfs.insert_dir("/var/lib/nginx/tmp/uwsgi");
     vfs.insert_dir("/run");
     vfs.insert_dir("/dev");
     vfs.insert_dir("/tmp");
+    vfs.insert_dir("/proc");
+    vfs.insert_dir("/proc/self");
 
     vfs.insert_file("/lib/ld-musl-riscv64.so.1", LD_MUSL);
     vfs.insert_symlink("/lib/libc.musl-riscv64.so.1", "/lib/ld-musl-riscv64.so.1");
