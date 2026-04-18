@@ -1,4 +1,4 @@
-use crate::loader::{load_elf, LoadedElf};
+use crate::loader::{load_program, LoadedElf};
 use crate::mm::memory_set::MemorySet;
 use crate::trap::TrapContext;
 use alloc::boxed::Box;
@@ -88,9 +88,21 @@ pub const MMAP_TOP: usize = 0x3F00_0000;
 
 impl Task {
     pub fn from_elf(data: &[u8], args: &[&str], envs: &[&str]) -> Arc<Self> {
-        let LoadedElf { memory, entry, mut stack_top, program_break, auxv_phdr, phnum, phent } = load_elf(data);
+        Self::from_program(data, None, args, envs)
+    }
+
+    pub fn from_program(main_data: &[u8], interp_data: Option<&[u8]>, args: &[&str], envs: &[&str]) -> Arc<Self> {
+        let LoadedElf { memory, main, interp, mut stack_top, program_break } = load_program(main_data, interp_data);
         let mut memory = memory;
-        let sp_after = setup_user_stack(&mut memory, &mut stack_top, args, envs, auxv_phdr, phnum, phent, entry);
+        // If there is an interpreter, the kernel jumps to the interpreter; it
+        // will relocate itself and then load the main program's segments (which
+        // we've already pre-mapped, so it shouldn't need to re-mmap).
+        let entry = interp.as_ref().map(|i| i.entry).unwrap_or(main.entry);
+        let sp_after = setup_user_stack(
+            &mut memory, &mut stack_top, args, envs,
+            main.phdr, main.phnum, main.phent, main.entry,
+            interp.as_ref().map(|i| i.base).unwrap_or(0),
+        );
         let kstack = KernelStack::new();
         let kstack_top = kstack.top();
         let cx = TrapContext::app_init(entry, sp_after, kstack_top);
@@ -120,7 +132,7 @@ impl Task {
 }
 
 fn setup_user_stack(ms: &mut MemorySet, stack_top: &mut usize, args: &[&str], envs: &[&str],
-                    phdr: usize, phnum: usize, phent: usize, entry: usize) -> usize {
+                    phdr: usize, phnum: usize, phent: usize, entry: usize, interp_base: usize) -> usize {
     use crate::mm::address::VirtAddr;
     use crate::mm::page_table::write_user_bytes;
 
@@ -160,6 +172,7 @@ fn setup_user_stack(ms: &mut MemorySet, stack_top: &mut usize, args: &[&str], en
         (4,  phent),      // AT_PHENT
         (5,  phnum),      // AT_PHNUM
         (6,  4096),       // AT_PAGESZ
+        (7,  interp_base),// AT_BASE (interp base)
         (9,  entry),      // AT_ENTRY
         (11, 0),          // AT_UID
         (12, 0),          // AT_EUID
