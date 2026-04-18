@@ -11,3 +11,7 @@ bitflags = "2"
 lazy_static = { version = "1.5", features = ["spin_no_std"] }
 buddy_system_allocator = "0.11"
 xmas-elf = "0.9"
+virtio-drivers = "0.11"
+smoltcp = { version = "0.12", default-features = false, features = [
+    "alloc", "medium-ethernet", "proto-ipv4", "socket-tcp", "socket-udp"
+] }
