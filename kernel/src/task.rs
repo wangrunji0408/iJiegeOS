@@ -88,24 +88,18 @@ pub const MMAP_TOP: usize = 0x3F00_0000;
 
 impl Task {
     pub fn from_elf(data: &[u8], args: &[&str], envs: &[&str]) -> Arc<Self> {
-        crate::println!("[kernel] Task::from_elf start");
-        let LoadedElf { mut memory, entry, mut stack_top, program_break, auxv_phdr, phnum, phent } = load_elf(data);
-        crate::println!("[kernel] elf loaded, entry={:#x}", entry);
+        let LoadedElf { memory, entry, mut stack_top, program_break, auxv_phdr, phnum, phent } = load_elf(data);
+        let mut memory = memory;
         let sp_after = setup_user_stack(&mut memory, &mut stack_top, args, envs, auxv_phdr, phnum, phent, entry);
-        crate::println!("[kernel] user stack set up, sp={:#x}", sp_after);
         let kstack = KernelStack::new();
         let kstack_top = kstack.top();
         let cx = TrapContext::app_init(entry, sp_after, kstack_top);
         let trap_cx = Box::new(UnsafeCell::new(cx));
-        crate::println!("[kernel] trap cx built");
         let mut files = FileTable::new();
-        crate::println!("[kernel] file table built");
-        // fd 0..3 are stdin/out/err
         files.alloc(Arc::new(crate::fs::Stdin)).unwrap();
         files.alloc(Arc::new(crate::fs::Stdout)).unwrap();
         files.alloc(Arc::new(crate::fs::Stderr)).unwrap();
-        crate::println!("[kernel] stdio fds assigned");
-        let task = Arc::new(Self {
+        Arc::new(Self {
             pid: next_pid(),
             memory: Mutex::new(memory),
             kstack,
@@ -119,9 +113,7 @@ impl Task {
             files: Mutex::new(files),
             parent: Mutex::new(None),
             children: Mutex::new(Vec::new()),
-        });
-        crate::println!("[kernel] Task created pid={}", task.pid);
-        task
+        })
     }
 
     pub fn trap_cx_ptr(&self) -> *mut TrapContext { self.trap_cx.get() }
@@ -268,19 +260,13 @@ pub fn exit_current(code: i32) -> ! {
 }
 
 pub fn run_next() -> ! {
-    crate::println!("[kernel] run_next enter");
     loop {
         let next = SCHED.lock().ready.pop_front();
         if let Some(t) = next {
-            crate::println!("[kernel] scheduling pid={}", t.pid);
             *t.state.lock() = TaskState::Running;
             let cx_ptr = t.trap_cx_ptr();
             SCHED.lock().current = Some(t.clone());
             t.memory.lock().activate();
-            crate::println!("[kernel] user pt activated, cx={:#x}, sp={:#x}, pc={:#x}",
-                cx_ptr as usize,
-                unsafe { (*cx_ptr).x[2] },
-                unsafe { (*cx_ptr).sepc });
             unsafe {
                 core::arch::asm!("csrw sscratch, {}", in(reg) cx_ptr as usize);
             }
