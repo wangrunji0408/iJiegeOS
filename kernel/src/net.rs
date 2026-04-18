@@ -22,7 +22,7 @@ pub const VIRTIO_MMIO_SLOTS: usize = 8;
 const NET_QUEUE_SIZE: usize = 16;
 const NET_BUF_LEN: usize = 2048;
 
-type Nic = VirtIONet<KernelHal, MmioTransport, NET_QUEUE_SIZE>;
+type Nic = VirtIONet<KernelHal, MmioTransport<'static>, NET_QUEUE_SIZE>;
 
 pub struct VirtioNetDevice {
     pub nic: Arc<Mutex<Nic>>,
@@ -33,7 +33,7 @@ impl VirtioNetDevice {
         for i in 0..VIRTIO_MMIO_SLOTS {
             let base = VIRTIO_MMIO_BASE + i * VIRTIO_MMIO_STRIDE;
             let hdr = core::ptr::NonNull::new(base as *mut VirtIOHeader)?;
-            let transport = match unsafe { MmioTransport::new(hdr) } {
+            let transport = match unsafe { MmioTransport::new(hdr, VIRTIO_MMIO_STRIDE) } {
                 Ok(t) => t,
                 Err(_) => continue,
             };
