@@ -23,9 +23,11 @@ pub fn load_elf(data: &[u8]) -> LoadedElf {
     assert_eq!(hdr.pt1.magic, [0x7f, b'E', b'L', b'F']);
     // RISC-V machine: xmas-elf 0.9 reports RISC_V as a named variant
 
-    // build kernel identity map + user mappings in a new MemorySet
     let mut ms = kernel_identity_space();
 
+    // First pass: union of page permissions for each page.
+    use alloc::collections::BTreeMap;
+    let mut page_perm: BTreeMap<usize, MapPerm> = BTreeMap::new();
     let mut max_end_va: usize = 0;
     let mut phdr_addr: usize = 0;
     let phnum = hdr.pt2.ph_count() as usize;
@@ -35,28 +37,17 @@ pub fn load_elf(data: &[u8]) -> LoadedElf {
         if ph.get_type() == Ok(PhType::Load) {
             let start_va = ph.virtual_addr() as usize;
             let end_va = start_va + ph.mem_size() as usize;
-            let file_off = ph.offset() as usize;
-            let file_sz = ph.file_size() as usize;
-
             let mut perm = MapPerm::U;
             if ph.flags().is_read() { perm |= MapPerm::R; }
             if ph.flags().is_write() { perm |= MapPerm::W; }
             if ph.flags().is_execute() { perm |= MapPerm::X; }
 
-            let start_pg = VirtAddr(start_va).floor().base().as_usize();
-            let end_pg = VirtAddr(end_va).ceil().base().as_usize();
-            let mut area = MapArea::new(
-                VirtAddr(start_pg),
-                VirtAddr(end_pg),
-                perm,
-                MapType::Framed,
-            );
-            area.map(&mut ms.page_table);
-            // Copy file contents at the correct intra-page offset.
-            let seg = &data[file_off..file_off + file_sz];
-            copy_segment_into_area(&area, &ms, start_va - start_pg, seg);
-            ms.areas.push(area);
-
+            let start_pg = VirtAddr(start_va).floor().0;
+            let end_pg = VirtAddr(end_va).ceil().0;
+            for vpn in start_pg..end_pg {
+                let entry = page_perm.entry(vpn).or_insert(MapPerm::U);
+                *entry |= perm;
+            }
             if end_va > max_end_va { max_end_va = end_va; }
             if ph.offset() <= hdr.pt2.ph_offset()
                 && hdr.pt2.ph_offset() < ph.offset() + ph.file_size()
@@ -66,10 +57,53 @@ pub fn load_elf(data: &[u8]) -> LoadedElf {
         }
     }
 
-    // Program break (heap start) — round up to page
+    // Map all pages
+    use crate::mm::address::VirtPageNum;
+    use crate::mm::frame::alloc as alloc_frame;
+    let mut frames: BTreeMap<usize, crate::mm::frame::FrameTracker> = BTreeMap::new();
+    for (&vpn, &perm) in &page_perm {
+        let f = alloc_frame().expect("no frame");
+        ms.page_table.map(VirtPageNum(vpn), f.ppn, perm.into());
+        frames.insert(vpn, f);
+    }
+
+    // Copy file bytes into pages
+    for ph in elf.program_iter() {
+        if ph.get_type() == Ok(PhType::Load) {
+            let start_va = ph.virtual_addr() as usize;
+            let file_off = ph.offset() as usize;
+            let file_sz = ph.file_size() as usize;
+            let src = &data[file_off..file_off + file_sz];
+
+            let mut va = start_va;
+            let mut written = 0usize;
+            while written < src.len() {
+                let page_va = va & !(PAGE_SIZE - 1);
+                let intra = va - page_va;
+                let vpn = page_va / PAGE_SIZE;
+                let f = frames.get(&vpn).expect("page not tracked");
+                let dst_page = f.ppn.get_bytes_array();
+                let n = core::cmp::min(PAGE_SIZE - intra, src.len() - written);
+                dst_page[intra..intra + n].copy_from_slice(&src[written..written + n]);
+                va += n;
+                written += n;
+            }
+        }
+    }
+
+    // Leak tracker keeping the pages alive via an internal map area.
+    let mut dummy_area = MapArea::new(VirtAddr(0), VirtAddr(0), MapPerm::U, MapType::Framed);
+    for (vpn, f) in frames {
+        dummy_area.frames.insert(VirtPageNum(vpn), f);
+    }
+    // Dummy bounds so unmap won't touch real ptes
+    dummy_area.start_vpn = VirtPageNum(0);
+    dummy_area.end_vpn = VirtPageNum(0);
+    ms.areas.push(dummy_area);
+
     let program_break = (max_end_va + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
 
-    // User stack: guard + stack pages at USER_STACK_TOP
+    // User stack
     let stack_bottom = USER_STACK_TOP - USER_STACK_SIZE;
     let mut stack_area = MapArea::new(
         VirtAddr(stack_bottom),
