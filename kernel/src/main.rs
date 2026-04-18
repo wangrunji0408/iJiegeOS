@@ -25,6 +25,7 @@ mod syscall_impl;
 mod task;
 mod timer;
 mod trap;
+mod virtio_hal;
 
 global_asm!(include_str!("entry.S"));
 
