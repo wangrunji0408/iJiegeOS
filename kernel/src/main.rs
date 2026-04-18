@@ -42,11 +42,11 @@ pub extern "C" fn rust_main(dtb: usize) -> ! {
     net::init();
     fs::init();
     task::init();
-    trap::enable_timer_interrupt();
     println!("[kernel] subsystems up, launching hello");
 
     let t = task::Task::from_elf(HELLO_ELF, &["hello"], &["PATH=/bin"]);
     task::add_task(t);
+    trap::enable_timer_interrupt();
     task::run_next();
 }
 
