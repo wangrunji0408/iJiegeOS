@@ -66,6 +66,7 @@ pub fn map_elf(ms: &mut MemorySet, data: &[u8], base: usize) -> ElfInfo {
     }
     info.min_base = if min_base == usize::MAX { base } else { min_base };
     info.entry = hdr.pt2.entry_point() as usize + base;
+    crate::println!("[load] map_elf: {} pages, base={:#x}, entry={:#x}", page_perm.len(), base, info.entry);
 
     use crate::mm::frame::alloc as alloc_frame;
     let mut frames: BTreeMap<usize, crate::mm::frame::FrameTracker> = BTreeMap::new();
