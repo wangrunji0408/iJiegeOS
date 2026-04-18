@@ -37,6 +37,10 @@ lazy_static! {
 
 pub fn init() {
     frame::init_frame_allocator();
-    KERNEL_SPACE.lock().activate();
+    let ks = KERNEL_SPACE.lock();
+    crate::println!("[kernel] kernel space built, root ppn = {:#x}", ks.page_table.root_ppn.0);
+    ks.activate();
+    crate::println!("[kernel] satp written, paging on");
+    drop(ks);
     crate::println!("[kernel] memory management initialized");
 }
