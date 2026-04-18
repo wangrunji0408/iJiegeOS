@@ -1,0 +1,12 @@
+[workspace]
+resolver = "2"
+members = ["kernel"]
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+debug = true
+
+[profile.dev]
+panic = "abort"
