@@ -13,6 +13,7 @@ use core::panic::PanicInfo;
 
 #[macro_use]
 mod console;
+mod epoll;
 mod fs;
 mod heap;
 mod initramfs;

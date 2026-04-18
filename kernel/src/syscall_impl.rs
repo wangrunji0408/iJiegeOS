@@ -95,8 +95,8 @@ fn dispatch_inner(id: usize, args: [usize; 6], _cx: &mut TrapContext) -> isize {
         SYS_SIGNALFD4 => 0,
         SYS_EVENTFD2 => sys_eventfd2(args[0] as u32, args[1] as u32),
         SYS_EPOLL_CREATE1 => sys_epoll_create1(args[0] as u32),
-        SYS_EPOLL_CTL => 0,
-        SYS_EPOLL_PWAIT => 0,
+        SYS_EPOLL_CTL => sys_epoll_ctl(args[0] as i32, args[1] as i32, args[2] as i32, args[3]),
+        SYS_EPOLL_PWAIT => sys_epoll_pwait(args[0] as i32, args[1], args[2] as i32, args[3] as i32),
         SYS_TIMERFD_CREATE => -38,
         SYS_TGKILL | SYS_TKILL | SYS_KILL => 0,
         SYS_FUTEX => 0,
@@ -530,7 +530,92 @@ fn sys_dup3(old: i32, new: i32, _flags: u32) -> isize {
 
 fn sys_pipe2(_buf: usize, _flags: u32) -> isize { -38 }
 fn sys_eventfd2(_initval: u32, _flags: u32) -> isize { -38 }
-fn sys_epoll_create1(_flags: u32) -> isize { -38 }
+
+fn sys_epoll_create1(_flags: u32) -> isize {
+    let t = crate::task::current();
+    let ep = crate::epoll::Epoll::new();
+    t.files.lock().alloc(ep as Arc<dyn crate::fs::File>).map(|x| x as isize).unwrap_or(-24)
+}
+
+#[repr(C)]
+struct EpollEvent { events: u32, _pad: u32, data: u64 }
+
+const EPOLL_CTL_ADD: i32 = 1;
+const EPOLL_CTL_DEL: i32 = 2;
+const EPOLL_CTL_MOD: i32 = 3;
+
+fn sys_epoll_ctl(epfd: i32, op: i32, fd: i32, event: usize) -> isize {
+    let t = crate::task::current();
+    let Some(epfile) = t.files.lock().get(epfd) else { return -9 };
+    let epfile_any = Arc::clone(&epfile);
+    let ep = unsafe {
+        let ptr = Arc::into_raw(epfile_any) as *const crate::epoll::Epoll;
+        let arc = Arc::from_raw(ptr);
+        arc
+    };
+    if op == EPOLL_CTL_DEL {
+        ep.remove(fd);
+        return 0;
+    }
+    let bytes = current_pt_read(event, core::mem::size_of::<EpollEvent>());
+    let ev: EpollEvent = unsafe { core::ptr::read(bytes.as_ptr() as *const EpollEvent) };
+    let item = crate::epoll::EpollItem { fd, events: ev.events, data: ev.data };
+    if op == EPOLL_CTL_ADD { ep.add(item); } else { ep.modify(item); }
+    0
+}
+
+const EPOLLIN: u32 = 0x1;
+const EPOLLOUT: u32 = 0x4;
+
+fn sys_epoll_pwait(epfd: i32, events: usize, maxevents: i32, _timeout: i32) -> isize {
+    let t = crate::task::current();
+    let Some(epfile) = t.files.lock().get(epfd) else { return -9 };
+    let ep = unsafe {
+        let ptr = Arc::into_raw(Arc::clone(&epfile)) as *const crate::epoll::Epoll;
+        Arc::from_raw(ptr)
+    };
+
+    loop {
+        crate::net::poll();
+        let items = ep.snapshot();
+        let mut ready: alloc::vec::Vec<EpollEvent> = alloc::vec::Vec::new();
+        for it in &items {
+            let Some(f) = t.files.lock().get(it.fd) else { continue; };
+            let Some(sf) = f.as_socket() else { continue; };
+            let g = sf.sock.lock();
+            let Some(sock) = g.as_ref() else { continue; };
+            let mut flags = 0u32;
+            if it.events & EPOLLIN != 0 {
+                // For a listening socket, "ready" = incoming connection.
+                // For a connected socket, "ready" = data to read.
+                let is_listening = matches!(*sf.state.lock(), crate::fs::SocketState::Listening { .. });
+                if is_listening {
+                    if crate::net::tcp_is_active(sock) { flags |= EPOLLIN; }
+                } else if crate::net::tcp_can_recv(sock) {
+                    flags |= EPOLLIN;
+                }
+            }
+            if it.events & EPOLLOUT != 0 && crate::net::tcp_can_send(sock) {
+                flags |= EPOLLOUT;
+            }
+            if flags != 0 {
+                ready.push(EpollEvent { events: flags, _pad: 0, data: it.data });
+                if ready.len() >= maxevents as usize { break; }
+            }
+        }
+        if !ready.is_empty() {
+            let bytes: &[u8] = unsafe {
+                core::slice::from_raw_parts(
+                    ready.as_ptr() as *const u8,
+                    ready.len() * core::mem::size_of::<EpollEvent>(),
+                )
+            };
+            current_pt_write(events, bytes);
+            return ready.len() as isize;
+        }
+        unsafe { riscv::asm::wfi(); }
+    }
+}
 
 #[repr(C)]
 struct SysInfo { uptime: i64, loads: [u64; 3], totalram: u64, freeram: u64,
