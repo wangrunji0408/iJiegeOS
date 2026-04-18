@@ -15,6 +15,7 @@ use core::panic::PanicInfo;
 mod console;
 mod fs;
 mod heap;
+mod initramfs;
 mod loader;
 mod mm;
 mod net;
