@@ -111,7 +111,6 @@ fn dispatch_inner(id: usize, args: [usize; 6], _cx: &mut TrapContext) -> isize {
         SYS_PRCTL => 0,
         SYS_GETRUSAGE => 0,
         _ => {
-            crate::println!("[sys] unimpl {} args={:#x?}", id, args);
             -38
         }
     }
@@ -294,7 +293,6 @@ fn sys_openat(dirfd: i32, path: usize, flags: u32, _mode: u32) -> isize {
     } else {
         crate::fs::VFS.open(&full)
     };
-    crate::println!("[open] {} writable={} -> {}", full, writable, if result.is_some() { "ok" } else { "ENOENT" });
     let Some(file) = result else {
         return -2;
     };
