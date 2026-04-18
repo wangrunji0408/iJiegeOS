@@ -9,7 +9,7 @@ use alloc::string::String;
 
 pub fn dispatch(id: usize, args: [usize; 6], _cx: &mut TrapContext) -> isize {
     // Trace every syscall (disabled by default to avoid flooding)
-    static TRACE: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(true);
+    static TRACE: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
     if TRACE.load(core::sync::atomic::Ordering::Relaxed) {
         let name = match id {
             SYS_WRITE => "write", SYS_READ => "read", SYS_WRITEV => "writev", SYS_READV => "readv",
@@ -91,6 +91,11 @@ fn dispatch_inner(id: usize, args: [usize; 6], _cx: &mut TrapContext) -> isize {
         SYS_ACCEPT | SYS_ACCEPT4 => sys_accept(args[0] as i32, args[1], args[2], args[3] as i32),
         SYS_SETSOCKOPT | SYS_GETSOCKOPT => 0,
         SYS_SHUTDOWN => sys_shutdown(args[0] as i32),
+        SYS_SENDTO => sys_sendto(args[0] as i32, args[1], args[2]),
+        SYS_RECVFROM => sys_recvfrom(args[0] as i32, args[1], args[2]),
+        SYS_SENDMSG => sys_sendmsg(args[0] as i32, args[1], args[2] as i32),
+        SYS_RECVMSG => -11, // EAGAIN
+        SYS_GETSOCKNAME | SYS_GETPEERNAME => sys_getsockname(args[0] as i32, args[1], args[2]),
         SYS_PIPE2 => sys_pipe2(args[0], args[1] as u32),
         SYS_SIGNALFD4 => 0,
         SYS_EVENTFD2 => sys_eventfd2(args[0] as u32, args[1] as u32),
@@ -716,5 +721,32 @@ fn sys_shutdown(fd: i32) -> isize {
     let Some(sf) = file.as_socket() else { return -88 };
     let g = sf.sock.lock();
     if let Some(s) = g.as_ref() { crate::net::tcp_close(s); }
+    0
+}
+
+fn sys_sendto(fd: i32, buf: usize, len: usize) -> isize {
+    sys_write(fd, buf, len)
+}
+
+fn sys_recvfrom(fd: i32, buf: usize, len: usize) -> isize {
+    sys_read(fd, buf, len)
+}
+
+fn sys_sendmsg(fd: i32, msghdr: usize, _flags: i32) -> isize {
+    // struct msghdr { msg_name, msg_namelen, msg_iov, msg_iovlen, msg_control, msg_controllen, msg_flags }
+    // Only read msg_iov/msg_iovlen and use writev path.
+    let hdr = current_pt_read(msghdr, core::mem::size_of::<usize>() * 7);
+    let iov_ptr = usize::from_le_bytes(hdr[16..24].try_into().unwrap());
+    let iov_len = usize::from_le_bytes(hdr[24..32].try_into().unwrap());
+    sys_writev(fd, iov_ptr, iov_len)
+}
+
+fn sys_getsockname(_fd: i32, addr: usize, addrlen: usize) -> isize {
+    #[repr(C)] struct Sa { family: u16, port: u16, addr: u32, zero: [u8; 8] }
+    let sa = Sa { family: 2, port: (80u16).to_be(), addr: 0, zero: [0; 8] };
+    let b = unsafe { core::slice::from_raw_parts(&sa as *const _ as *const u8, 16) };
+    current_pt_write(addr, b);
+    let l: u32 = 16;
+    current_pt_write(addrlen, &l.to_le_bytes());
     0
 }
