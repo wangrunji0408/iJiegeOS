@@ -10,3 +10,4 @@ log = "0.4"
 bitflags = "2"
 lazy_static = { version = "1.5", features = ["spin_no_std"] }
 buddy_system_allocator = "0.11"
+xmas-elf = "0.9"
