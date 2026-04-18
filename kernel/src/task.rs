@@ -84,7 +84,7 @@ unsafe impl Sync for Task {}
 static PID_COUNTER: Mutex<usize> = Mutex::new(1);
 fn next_pid() -> usize { let mut g = PID_COUNTER.lock(); let p = *g; *g += 1; p }
 
-pub const MMAP_TOP: usize = 0x3F00_0000;
+pub const MMAP_TOP: usize = 0x3000_0000;
 
 impl Task {
     pub fn from_elf(data: &[u8], args: &[&str], envs: &[&str]) -> Arc<Self> {
