@@ -1,0 +1,11 @@
+[package]
+name = "hello"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "hello"
+path = "src/main.rs"
+
+[package.metadata]
+# user program builds for riscv64gc-unknown-none-elf using same workspace config
