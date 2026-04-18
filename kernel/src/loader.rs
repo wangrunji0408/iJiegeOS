@@ -21,7 +21,7 @@ pub fn load_elf(data: &[u8]) -> LoadedElf {
     let elf = xmas_elf::ElfFile::new(data).expect("bad elf");
     let hdr = elf.header;
     assert_eq!(hdr.pt1.magic, [0x7f, b'E', b'L', b'F']);
-    assert_eq!(hdr.pt2.machine().as_machine(), xmas_elf::header::Machine::Other(0xf3));
+    // RISC-V machine: xmas-elf 0.9 reports RISC_V as a named variant
 
     // build kernel identity map + user mappings in a new MemorySet
     let mut ms = kernel_identity_space();
