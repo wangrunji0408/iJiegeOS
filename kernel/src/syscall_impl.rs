@@ -240,10 +240,11 @@ fn sys_openat(dirfd: i32, path: usize, _flags: u32, _mode: u32) -> isize {
     let p = user_cstr(path);
     let full = resolve_path(dirfd, &p);
     let Some(file) = crate::fs::VFS.open(&full) else {
-        return -2; // ENOENT
+        return -2;
     };
     let t = crate::task::current();
-    t.files.lock().alloc(file).map(|x| x as isize).unwrap_or(-24)
+    let r = t.files.lock().alloc(file).map(|x| x as isize).unwrap_or(-24);
+    r
 }
 
 #[repr(C)]
@@ -447,7 +448,8 @@ fn sys_fcntl(fd: i32, cmd: u32, _arg: usize) -> isize {
     match cmd {
         F_DUPFD | F_DUPFD_CLOEXEC => {
             let f = match t.files.lock().get(fd) { Some(x) => x, None => return -9 };
-            t.files.lock().alloc(f).map(|x| x as isize).unwrap_or(-24)
+            let r = t.files.lock().alloc(f).map(|x| x as isize).unwrap_or(-24);
+            r
         }
         F_GETFL => 0,
         F_SETFL => 0,
@@ -460,7 +462,8 @@ fn sys_fcntl(fd: i32, cmd: u32, _arg: usize) -> isize {
 fn sys_dup(fd: i32) -> isize {
     let t = crate::task::current();
     let f = match t.files.lock().get(fd) { Some(x) => x, None => return -9 };
-    t.files.lock().alloc(f).map(|x| x as isize).unwrap_or(-24)
+    let r = t.files.lock().alloc(f).map(|x| x as isize).unwrap_or(-24);
+    r
 }
 
 fn sys_dup3(old: i32, new: i32, _flags: u32) -> isize {
