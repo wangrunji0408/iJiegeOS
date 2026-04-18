@@ -9,7 +9,7 @@ use alloc::string::String;
 
 pub fn dispatch(id: usize, args: [usize; 6], _cx: &mut TrapContext) -> isize {
     // Trace every syscall (disabled by default to avoid flooding)
-    static TRACE: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+    static TRACE: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(true);
     if TRACE.load(core::sync::atomic::Ordering::Relaxed) {
         let name = match id {
             SYS_WRITE => "write", SYS_READ => "read", SYS_WRITEV => "writev", SYS_READV => "readv",
