@@ -24,7 +24,7 @@ pub fn load_elf(data: &[u8]) -> LoadedElf {
     // RISC-V machine: xmas-elf 0.9 reports RISC_V as a named variant
 
     let mut ms = kernel_identity_space();
-    crate::println!("[kernel] kernel_identity_space built (user pt), areas={}", ms.areas.len());
+    crate::println!("[kernel] user pt built, areas={}", ms.areas.len());
 
     // First pass: union of page permissions for each page.
     use alloc::collections::BTreeMap;
@@ -57,6 +57,7 @@ pub fn load_elf(data: &[u8]) -> LoadedElf {
             }
         }
     }
+    crate::println!("[kernel] ELF pages: {}, program_break={:#x}", page_perm.len(), max_end_va);
 
     // Map all pages
     use crate::mm::address::VirtPageNum;
