@@ -268,21 +268,24 @@ pub fn exit_current(code: i32) -> ! {
 }
 
 pub fn run_next() -> ! {
+    crate::println!("[kernel] run_next enter");
     loop {
         let next = SCHED.lock().ready.pop_front();
         if let Some(t) = next {
+            crate::println!("[kernel] scheduling pid={}", t.pid);
             *t.state.lock() = TaskState::Running;
             let cx_ptr = t.trap_cx_ptr();
             SCHED.lock().current = Some(t.clone());
-            // activate page table
             t.memory.lock().activate();
-            // set sscratch to the trap-context address so __alltraps can land on it
+            crate::println!("[kernel] user pt activated, cx={:#x}, sp={:#x}, pc={:#x}",
+                cx_ptr as usize,
+                unsafe { (*cx_ptr).x[2] },
+                unsafe { (*cx_ptr).sepc });
             unsafe {
                 core::arch::asm!("csrw sscratch, {}", in(reg) cx_ptr as usize);
             }
             crate::trap::trap_return(cx_ptr as usize);
         } else {
-            // no ready tasks
             unsafe { riscv::asm::wfi(); }
         }
     }
