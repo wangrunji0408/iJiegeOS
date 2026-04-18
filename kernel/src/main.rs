@@ -12,6 +12,7 @@ use core::panic::PanicInfo;
 #[macro_use]
 mod console;
 mod heap;
+mod mm;
 mod sbi;
 
 global_asm!(include_str!("entry.S"));
@@ -21,6 +22,8 @@ pub extern "C" fn rust_main(dtb: usize) -> ! {
     heap::init();
     println!();
     println!("[kernel] hello from rust, dtb @ {:#x}", dtb);
+    mm::init();
+    println!("[kernel] paging active (Sv39)");
     println!("[kernel] shutting down");
     sbi::shutdown(false);
 }
