@@ -29,7 +29,7 @@ mod virtio_hal;
 
 global_asm!(include_str!("entry.S"));
 
-static HELLO_ELF: &[u8] = include_bytes!("../../user/hello/target/riscv64gc-unknown-none-elf/release/hello");
+static HTTPD_ELF: &[u8] = include_bytes!("../../user/httpd/target/riscv64gc-unknown-none-elf/release/httpd");
 
 #[no_mangle]
 pub extern "C" fn rust_main(dtb: usize) -> ! {
@@ -43,9 +43,9 @@ pub extern "C" fn rust_main(dtb: usize) -> ! {
     net::init();
     fs::init();
     task::init();
-    println!("[kernel] subsystems up, launching hello");
+    println!("[kernel] subsystems up, launching httpd");
 
-    let t = task::Task::from_elf(HELLO_ELF, &["hello"], &["PATH=/bin"]);
+    let t = task::Task::from_elf(HTTPD_ELF, &["httpd"], &["PATH=/bin"]);
     task::add_task(t);
     trap::enable_timer_interrupt();
     task::run_next();
