@@ -278,6 +278,7 @@ pub fn run_next() -> ! {
         if let Some(t) = next {
             *t.state.lock() = TaskState::Running;
             let cx_ptr = t.trap_cx_ptr();
+            crate::println!("[run] pid={} sepc={:#x} sp={:#x}", t.pid, unsafe { (*cx_ptr).sepc }, unsafe { (*cx_ptr).x[2] });
             SCHED.lock().current = Some(t.clone());
             t.memory.lock().activate();
             unsafe {
