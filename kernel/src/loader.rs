@@ -90,8 +90,14 @@ pub fn map_elf(ms: &mut MemorySet, data: &[u8], base: usize) -> ElfInfo {
                 let page_va = va & !(PAGE_SIZE - 1);
                 let intra = va - page_va;
                 let vpn = page_va / PAGE_SIZE;
-                let f = frames.get(&vpn).expect("page not tracked");
-                let dst_page = f.ppn.get_bytes_array();
+                let ppn = if let Some(f) = frames.get(&vpn) {
+                    f.ppn
+                } else {
+                    // Already mapped by a previous ELF or earlier PH
+                    let pte = ms.page_table.find_pte(VirtPageNum(vpn)).expect("page not tracked");
+                    pte.ppn()
+                };
+                let dst_page = ppn.get_bytes_array();
                 let n = core::cmp::min(PAGE_SIZE - intra, src.len() - written);
                 dst_page[intra..intra + n].copy_from_slice(&src[written..written + n]);
                 va += n;
