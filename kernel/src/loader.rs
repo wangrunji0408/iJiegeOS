@@ -68,6 +68,7 @@ pub fn load_elf(data: &[u8]) -> LoadedElf {
         ms.page_table.map(VirtPageNum(vpn), f.ppn, perm.into());
         frames.insert(vpn, f);
     }
+    crate::println!("[kernel] ELF pages mapped");
 
     // Copy file bytes into pages
     for ph in elf.program_iter() {
@@ -115,6 +116,7 @@ pub fn load_elf(data: &[u8]) -> LoadedElf {
     );
     stack_area.map(&mut ms.page_table);
     ms.areas.push(stack_area);
+    crate::println!("[kernel] user stack mapped");
 
     LoadedElf {
         memory: ms,
