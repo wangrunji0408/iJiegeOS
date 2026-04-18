@@ -54,7 +54,8 @@ pub extern "C" fn rust_main(dtb: usize) -> ! {
         &["/lib/ld-musl-riscv64.so.1", "/usr/sbin/nginx",
           "-p", "/var/lib/nginx",
           "-c", "/etc/nginx/nginx.conf",
-          "-e", "/dev/stderr"],
+          "-e", "/dev/stderr",
+          "-t"],
         &[
             "PATH=/usr/sbin:/usr/bin:/sbin:/bin",
             "HOME=/root",
