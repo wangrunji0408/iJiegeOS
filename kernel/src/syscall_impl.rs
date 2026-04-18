@@ -534,7 +534,8 @@ fn sys_eventfd2(_initval: u32, _flags: u32) -> isize { -38 }
 fn sys_epoll_create1(_flags: u32) -> isize {
     let t = crate::task::current();
     let ep = crate::epoll::Epoll::new();
-    t.files.lock().alloc(ep as Arc<dyn crate::fs::File>).map(|x| x as isize).unwrap_or(-24)
+    let r = t.files.lock().alloc(ep as Arc<dyn crate::fs::File>).map(|x| x as isize).unwrap_or(-24);
+    r
 }
 
 #[repr(C)]
