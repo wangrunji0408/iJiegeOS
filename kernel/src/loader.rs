@@ -150,6 +150,18 @@ pub fn load_program(main_data: &[u8], interp_data: Option<&[u8]>) -> LoadedElf {
     stack_area.map(&mut ms.page_table);
     ms.areas.push(stack_area);
 
+    // Map a "null page" at VA 0 so that accidental NULL reads return zeros.
+    // Glibc/musl-linked programs occasionally memcpy from NULL for empty
+    // strings; rather than faulting we give them zeros.
+    let mut null_area = MapArea::new(
+        VirtAddr(0),
+        VirtAddr(PAGE_SIZE),
+        MapPerm::R | MapPerm::U,
+        MapType::Framed,
+    );
+    null_area.map(&mut ms.page_table);
+    ms.areas.push(null_area);
+
     LoadedElf {
         memory: ms,
         main,
