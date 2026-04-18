@@ -51,7 +51,7 @@ pub extern "C" fn rust_main(dtb: usize) -> ! {
     let t = task::Task::from_program(
         LD_MUSL_ELF,
         None,
-        &["/lib/ld-musl-riscv64.so.1", "/usr/sbin/nginx", "-c", "/etc/nginx/nginx.conf"],
+        &["/lib/ld-musl-riscv64.so.1", "/usr/sbin/nginx", "-v"],
         &[
             "PATH=/usr/sbin:/usr/bin:/sbin:/bin",
             "HOME=/root",
