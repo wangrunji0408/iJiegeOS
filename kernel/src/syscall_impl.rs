@@ -9,7 +9,7 @@ use alloc::string::String;
 
 pub fn dispatch(id: usize, args: [usize; 6], _cx: &mut TrapContext) -> isize {
     // Trace every syscall (disabled by default to avoid flooding)
-    static TRACE: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(true);
+    static TRACE: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
     if TRACE.load(core::sync::atomic::Ordering::Relaxed) {
         let name = match id {
             SYS_WRITE => "write", SYS_READ => "read", SYS_WRITEV => "writev", SYS_READV => "readv",
@@ -285,6 +285,7 @@ fn sys_openat(dirfd: i32, path: usize, flags: u32, _mode: u32) -> isize {
     } else {
         crate::fs::VFS.open(&full)
     };
+    crate::println!("[open] {} writable={} -> {}", full, writable, if result.is_some() { "ok" } else { "ENOENT" });
     let Some(file) = result else {
         return -2;
     };
