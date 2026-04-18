@@ -93,7 +93,7 @@ impl File for StaticFile {
         };
         if new < 0 { return -22; }
         *p = new as u64;
-        new
+        new as isize
     }
     fn size(&self) -> u64 { self.data.len() as u64 }
     fn path(&self) -> &str { &self.path }
