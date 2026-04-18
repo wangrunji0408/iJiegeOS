@@ -239,7 +239,9 @@ fn resolve_path(dirfd: i32, path: &str) -> String {
 fn sys_openat(dirfd: i32, path: usize, _flags: u32, _mode: u32) -> isize {
     let p = user_cstr(path);
     let full = resolve_path(dirfd, &p);
-    let Some(file) = crate::fs::VFS.open(&full) else {
+    let result = crate::fs::VFS.open(&full);
+    crate::println!("[open] {} -> {}", full, if result.is_some() { "ok" } else { "enoent" });
+    let Some(file) = result else {
         return -2;
     };
     let t = crate::task::current();
