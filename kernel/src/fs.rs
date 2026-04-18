@@ -98,7 +98,7 @@ impl File for MemFile {
         };
         if new < 0 { return -22; }
         *p = new as u64;
-        new
+        new as isize
     }
     fn size(&self) -> u64 { self.data.lock().len() as u64 }
     fn readable(&self) -> bool { self.readable }
