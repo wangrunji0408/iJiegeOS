@@ -4,7 +4,7 @@ use crate::mm::MemorySet;
 use alloc::collections::BTreeMap;
 use xmas_elf::program::Type as PhType;
 
-pub const USER_STACK_TOP: usize = 0x1000_0000;
+pub const USER_STACK_TOP: usize = 0x30_0000_0000;
 pub const USER_STACK_SIZE: usize = 128 * PAGE_SIZE;
 
 #[derive(Default)]
@@ -127,12 +127,12 @@ pub fn load_program(main_data: &[u8], interp_data: Option<&[u8]>) -> LoadedElf {
         == xmas_elf::header::Type::SharedObject;
     crate::println!("[load] main is_pie={}", is_pie);
 
-    let main_base = if is_pie { 0x2000_0000 } else { 0 };
+    let main_base = if is_pie { 0x10_0000_0000 } else { 0 };
     let main = map_elf(&mut ms, main_data, main_base);
     crate::println!("[load] main mapped entry={:#x}", main.entry);
 
     let interp = interp_data.map(|idata| {
-        let interp_base = 0x3000_0000;
+        let interp_base = 0x20_0000_0000;
         let r = map_elf(&mut ms, idata, interp_base);
         crate::println!("[load] interp mapped entry={:#x}", r.entry);
         r
