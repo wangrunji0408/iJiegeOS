@@ -28,7 +28,7 @@ mod trap;
 
 global_asm!(include_str!("entry.S"));
 
-static HELLO_ELF: &[u8] = include_bytes!("../../target/riscv64gc-unknown-none-elf/release/hello");
+static HELLO_ELF: &[u8] = include_bytes!("../../user/hello/target/riscv64gc-unknown-none-elf/release/hello");
 
 #[no_mangle]
 pub extern "C" fn rust_main(dtb: usize) -> ! {
