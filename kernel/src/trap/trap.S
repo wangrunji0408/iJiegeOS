@@ -11,59 +11,54 @@
 .globl __restore
 .align 2
 __alltraps:
-    # sscratch holds kernel sp (top of per-task kernel stack) when entering from U
-    # If coming from S (kernel trap), sscratch is 0 (we set so at boot)
+    # Entering from U-mode: sscratch holds the TrapContext pointer
+    # Swap so that sp -> &TrapContext, sscratch -> user sp
     csrrw sp, sscratch, sp
-    # sp now points to kernel stack top (&TrapContext), sscratch has user sp
 
-    # allocate TrapContext on kernel stack (sp is already pointing at it, see setup)
-    # Actually we pre-allocate TrapContext at top of kernel stack; sp points there.
-
-    # skip x0, save x1
     sd x1, 1*8(sp)
-    # x2 (sp) - saved from sscratch below
-    # save x3..x31
     .set n, 3
     .rept 29
         SAVE_GP %n
         .set n, n+1
     .endr
 
-    # save sstatus, sepc
+    # Save csrs
     csrr t0, sstatus
     csrr t1, sepc
     sd t0, 32*8(sp)
     sd t1, 33*8(sp)
 
-    # save user sp (from sscratch)
+    # Save user sp
     csrr t2, sscratch
     sd t2, 2*8(sp)
+    # Put TrapContext address back into sscratch so the next trap lands here.
+    mv t2, sp
+    csrw sscratch, t2
 
     # a0 = &TrapContext
     mv a0, sp
-
-    # Load kernel_sp and trap_handler from context
+    # Switch to kernel stack
     ld t0, 35*8(sp)   # kernel_sp
     ld t1, 36*8(sp)   # trap_handler
-    # switch to kernel stack (top)
     mv sp, t0
-    jr t1
+    jalr t1             # call trap_handler(&mut TrapContext) -> &mut TrapContext
+    # After return, a0 still points at the (possibly new) TrapContext
+    # fall-through into __restore
+    j __restore
 
 .align 2
 __restore:
     # a0 = &TrapContext
     mv sp, a0
-    # save kernel_sp back into sscratch so the NEXT trap from U finds it
-    ld t0, 35*8(sp)
-    csrw sscratch, t0
-    # restore sstatus, sepc
-    ld t0, 32*8(sp)
-    ld t1, 33*8(sp)
+    # Make sure sscratch still points at cx for next trap
+    csrw sscratch, a0
+
+    ld t0, 32*8(sp)   # sstatus
+    ld t1, 33*8(sp)   # sepc
     csrw sstatus, t0
     csrw sepc, t1
-    # restore x1
+
     ld x1, 1*8(sp)
-    # restore x3..x31
     .set n, 3
     .rept 29
         LOAD_GP %n
