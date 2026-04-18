@@ -88,12 +88,16 @@ pub const MMAP_TOP: usize = 0x3F00_0000;
 
 impl Task {
     pub fn from_elf(data: &[u8], args: &[&str], envs: &[&str]) -> Arc<Self> {
+        crate::println!("[kernel] Task::from_elf start");
         let LoadedElf { mut memory, entry, mut stack_top, program_break, auxv_phdr, phnum, phent } = load_elf(data);
+        crate::println!("[kernel] elf loaded, entry={:#x}", entry);
         let sp_after = setup_user_stack(&mut memory, &mut stack_top, args, envs, auxv_phdr, phnum, phent, entry);
+        crate::println!("[kernel] user stack set up, sp={:#x}", sp_after);
         let kstack = KernelStack::new();
         let kstack_top = kstack.top();
         let cx = TrapContext::app_init(entry, sp_after, kstack_top);
         let trap_cx = Box::new(UnsafeCell::new(cx));
+        crate::println!("[kernel] trap cx built");
         let mut files = FileTable::new();
         // fd 0..3 are stdin/out/err
         files.alloc(Arc::new(crate::fs::Stdin)).unwrap();
