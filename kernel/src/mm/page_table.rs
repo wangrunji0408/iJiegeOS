@@ -83,7 +83,10 @@ impl PageTable {
 
     pub fn map(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, flags: PTEFlags) {
         let pte = self.find_pte_create(vpn).expect("no frame for pt");
-        assert!(!pte.is_valid(), "vpn {:#x} already mapped", vpn.0);
+        if pte.is_valid() {
+            panic!("vpn {:#x} already mapped -> old_ppn={:#x}, new_ppn={:#x}, root={:#x}",
+                vpn.0, pte.ppn().0, ppn.0, self.root_ppn.0);
+        }
         *pte = PageTableEntry::new(ppn, flags | PTEFlags::V);
     }
 
